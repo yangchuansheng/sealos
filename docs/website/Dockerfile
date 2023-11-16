@@ -17,6 +17,8 @@ RUN mkdir website/i18n/zh-Hans/docusaurus-plugin-content-docs/; \
     cp blog/zh-Hans/options.json  website/i18n/zh-Hans/docusaurus-plugin-content-blog/options.json
 WORKDIR /app/website
 
+RUN ls -lh i18n/zh-Hans/docusaurus-plugin-content-blog/
+
 RUN yarn install
 
 RUN yarn run build
