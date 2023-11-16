@@ -10,13 +10,13 @@ COPY . /app
 
 WORKDIR /app/website
 
-RUN ls -lh i18n/zh-Hans/docusaurus-plugin-content-blog/
-
-RUN head -50 i18n/zh-Hans/docusaurus-plugin-content-blog/2023/06/sealos-release.md
-
 RUN yarn install
 
 RUN yarn run build
+
+RUN ls -lh i18n/zh-Hans/docusaurus-plugin-content-blog/
+
+RUN head -50 i18n/zh-Hans/docusaurus-plugin-content-blog/2023/06/sealos-release.md
 
 FROM fholzer/nginx-brotli:latest
 
