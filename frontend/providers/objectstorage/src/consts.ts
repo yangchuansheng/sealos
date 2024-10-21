@@ -9,7 +9,11 @@ export enum QueryKey {
   bucketInfo = 'bucketInfo',
   bucketUser = 'bucketUser',
   minioFileList = 'minioFileList',
-  minioBucketDetial = 'minioBucketDetial'
+  HostStatus = 'hostStatus',
+  openHost = 'openHost',
+  closeHost = 'closeHost',
+  minioBucketDetial = 'minioBucketDetial',
+  updateSecretKey = 'updateSecretKey'
 }
 export type FormSchema = {
   bucketAuthority: Authority;
@@ -49,7 +53,7 @@ type MinioGroup<
 > = {
   input: Omit<
     {
-      apiVersion: 'minio.sealos.io/v1';
+      apiVersion: 'objectstorage.sealos.io/v1';
       kind: Kind;
       metadata: TMetadata;
       spec: Tspec;
@@ -58,7 +62,7 @@ type MinioGroup<
   >;
   output: Omit<
     {
-      apiVersion: 'minio.sealos.io/v1';
+      apiVersion: 'objectstorage.sealos.io/v1';
       kind: Kind;
       metadata: {
         annotations?: unknown;
@@ -75,7 +79,7 @@ type MinioGroup<
   >;
 };
 export type BucketCR = MinioGroup<
-  'Bucket',
+  'ObjectStorageBucket',
   {
     name: string;
     namespace: string;
@@ -89,12 +93,14 @@ export type BucketCR = MinioGroup<
   | undefined
 >;
 export type UserCR = MinioGroup<
-  'MinioUser',
+  'ObjectStorageUser',
   {
     name: string;
     namespace: string;
   },
-  never,
+  {
+    secretKeyVersion: number;
+  },
   {
     quota: number;
     size: number;
@@ -103,6 +109,7 @@ export type UserCR = MinioGroup<
     external: string;
     internal: string;
     secretKey: string;
+    secretKeyVersion: number;
   }
 >;
 
@@ -110,6 +117,7 @@ export type TBucket = {
   name: string;
   crName: string;
   policy: Authority;
+  isComplete: boolean;
 };
 export type bucketConfigQueryParam = { bucketName?: string; bucketPolicy?: Authority };
 export type UserSecretData = {
@@ -117,6 +125,8 @@ export type UserSecretData = {
   CONSOLE_SECRET_KEY: string;
   external: string;
   internal: string;
+  version: number;
+  specVersion: number;
 };
 export type QuotaData = {
   total: number;

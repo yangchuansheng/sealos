@@ -15,7 +15,7 @@
 package types
 
 const (
-	defaultKubeadmConfig = `apiVersion: kubeadm.k8s.io/v1beta2
+	defaultKubeadmConfig = `apiVersion: kubeadm.k8s.io/v1beta3
 kind: InitConfiguration
 localAPIEndpoint:
   # advertiseAddress: 192.168.2.110
@@ -24,7 +24,7 @@ nodeRegistration:
   criSocket: /run/containerd/containerd.sock
 
 ---
-apiVersion: kubeadm.k8s.io/v1beta2
+apiVersion: kubeadm.k8s.io/v1beta3
 kind: ClusterConfiguration
 kubernetesVersion: v1.19.8
 #controlPlaneEndpoint: "apiserver.cluster.local:6443"
@@ -131,7 +131,7 @@ enforceNodeAllocatable:
 eventBurst: 10
 eventRecordQPS: 5
 evictionHard:
-  imagefs.available: 15%
+  imagefs.available: 10%
   memory.available: 100Mi
   nodefs.available: 10%
   nodefs.inodesFree: 5%
@@ -143,7 +143,7 @@ healthzBindAddress: 0.0.0.0
 healthzPort: 10248
 httpCheckFrequency: 20s
 imageGCHighThresholdPercent: 85
-imageGCLowThresholdPercent: 80
+imageGCLowThresholdPercent: 75
 imageMinimumGCAge: 2m0s
 iptablesDropBit: 15
 iptablesMasqueradeBit: 14
@@ -176,7 +176,7 @@ featureGates:
   TTLAfterFinished: true
   EphemeralContainers: true
 ---
-apiVersion: kubeadm.k8s.io/v1beta2
+apiVersion: kubeadm.k8s.io/v1beta3
 kind: JoinConfiguration
 caCertPath: /etc/kubernetes/pki/ca.crt
 discovery:

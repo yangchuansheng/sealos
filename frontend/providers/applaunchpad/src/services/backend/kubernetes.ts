@@ -4,6 +4,12 @@ import type { V1Deployment, V1StatefulSet } from '@kubernetes/client-node';
 import { UserQuotaItemType } from '@/types/user';
 import { memoryFormatToMi, cpuFormatToM } from '@/utils/tools';
 
+export function K8sApiDefault(): k8s.KubeConfig {
+  const kc = new k8s.KubeConfig();
+  kc.loadFromDefault();
+  return kc;
+}
+
 export function CheckIsInCluster(): [boolean, string] {
   if (
     process.env.KUBERNETES_SERVICE_HOST !== undefined &&
@@ -33,7 +39,7 @@ export function K8sApi(config: string): k8s.KubeConfig {
       name: cluster.name,
       caData: cluster.caData,
       caFile: cluster.caFile,
-      server: inCluster && hosts ? hosts : 'https://apiserver.cluster.local:6443',
+      server: inCluster && hosts ? hosts : cluster.server,
       skipTLSVerify: cluster.skipTLSVerify
     };
 
@@ -188,6 +194,19 @@ export async function getUserBalance(kc: k8s.KubeConfig) {
 
 export async function getK8s({ kubeconfig }: { kubeconfig: string }) {
   const kc = K8sApi(kubeconfig);
+
+  // rewrite exportConfig to stop transform domain to ip
+  kc.exportConfig = () => {
+    const domain = global.AppConfig.cloud.domain;
+    if (!domain) return kubeconfig;
+    const oldKc = yaml.load(kubeconfig);
+    const newServer = `https://${domain}:6443`;
+    //@ts-ignore
+    oldKc.clusters[0].cluster.server = newServer;
+    const newkubeconfig = yaml.dump(oldKc);
+    return newkubeconfig;
+  };
+
   const kube_user = kc.getCurrentUser();
   const client = k8s.KubernetesObjectApi.makeApiClient(kc);
 
@@ -250,6 +269,7 @@ export async function getK8s({ kubeconfig }: { kubeconfig: string }) {
     k8sNetworkingApp: kc.makeApiClient(k8s.NetworkingV1Api),
     k8sCustomObjects: kc.makeApiClient(k8s.CustomObjectsApi),
     metricsClient: new k8s.Metrics(kc),
+    k8sExec: new k8s.Exec(kc),
     kube_user,
     namespace,
     applyYamlList,

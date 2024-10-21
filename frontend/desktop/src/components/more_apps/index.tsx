@@ -7,6 +7,7 @@ import Iconfont from '../iconfont';
 import styles from './index.module.scss';
 import clsx from 'clsx';
 import { useTranslation } from 'next-i18next';
+import { useConfigStore } from '@/stores/config';
 
 export default function Index() {
   const { t, i18n } = useTranslation();
@@ -18,6 +19,7 @@ export default function Index() {
   const endIndex = startIndex + itemsPerPage;
   const paginatedApps = apps?.slice(startIndex, endIndex);
   const totalPages = Math.ceil((apps?.length || 0) / itemsPerPage);
+  const logo = useConfigStore().layoutConfig?.logo;
 
   const handleDoubleClick = (e: MouseEvent<HTMLDivElement>, item: TApp) => {
     e.preventDefault();
@@ -42,7 +44,7 @@ export default function Index() {
           textShadow={'0px 1px 2px rgba(0, 0, 0, 0.4)'}
           lineHeight={'140%'}
         >
-          {t('More Apps')}
+          {t('common:more_apps')}
         </Text>
       </Flex>
       <Flex alignItems={'center'}>
@@ -103,7 +105,8 @@ export default function Index() {
                     width="100%"
                     height="100%"
                     src={item?.icon}
-                    fallbackSrc="/images/sealos.svg"
+                    fallbackSrc={logo || '/logo.svg'}
+                    draggable={false}
                     alt="user avator"
                   />
                 </Box>
@@ -117,7 +120,7 @@ export default function Index() {
                 >
                   {item?.i18n?.[i18n?.language]?.name
                     ? item?.i18n?.[i18n?.language]?.name
-                    : t(item?.name)}
+                    : item?.name}
                 </Text>
               </GridItem>
             ))}

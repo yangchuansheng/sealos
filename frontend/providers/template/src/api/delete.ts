@@ -1,5 +1,9 @@
 import { DELETE } from '@/services/request';
-import { BaseResourceType, ResourceKindType } from '@/types/resource';
+import {
+  ResourceListItemType,
+  AllResourceKindType,
+  DeleteResourceFunction
+} from '@/types/resource';
 
 export const delCronJobByName = (instanceName: string) =>
   DELETE('/api/resource/deleteCronjob', { instanceName });
@@ -36,11 +40,17 @@ export const delRoleBindingByName = (instanceName: string) =>
 
 export const delServiceAccountByName = (instanceName: string) =>
   DELETE('/api/resource/delServiceAccount', { instanceName });
+
 export const delPersistentVolumeClaim = (instanceName: string) =>
   DELETE('/api/resource/delPersistentVolumeClaim', { instanceName });
+
 export const delCR = (data: Record<'kind' | 'name' | 'apiVersion', string>) =>
   DELETE('/api/resource/delCR', data);
-const deleteResourceByKind: Record<string, undefined | ((instanceName: string) => void)> = {
+
+export const delServiceByName = (instanceName: string) =>
+  DELETE('/api/resource/delService', { instanceName });
+
+const deleteResourceByKind: Record<AllResourceKindType, DeleteResourceFunction | undefined> = {
   CronJob: (instanceName: string) => delCronJobByName(instanceName),
   App: (instanceName: string) => deleteAppCRD(instanceName),
   Secret: (instanceName: string) => deleteSecret(instanceName),
@@ -53,22 +63,25 @@ const deleteResourceByKind: Record<string, undefined | ((instanceName: string) =
   Role: (instanceName: string) => delRoleByName(instanceName),
   RoleBinding: (instanceName: string) => delRoleBindingByName(instanceName),
   ServiceAccount: (instanceName: string) => delServiceAccountByName(instanceName),
-  PersistentVolumeClaim: delPersistentVolumeClaim
+  PersistentVolumeClaim: delPersistentVolumeClaim,
+  Service: delServiceByName,
+  ObjectStorageBucket: undefined // use delCR
 };
 
-export const deleteAllResources = async (resources: BaseResourceType[]) => {
+export const deleteAllResources = async (resources: ResourceListItemType[]) => {
   const deletePromises = resources.map((resource) => {
     const fn = deleteResourceByKind[resource.kind];
-    console.log(fn);
-    if (!!fn) return fn(resource.name);
-    else
-      delCR({
+    if (!!fn) {
+      return fn(resource.name);
+    } else {
+      console.log(fn, resource);
+      return delCR({
         name: resource.name,
         apiVersion: resource.apiVersion!,
         kind: resource.kind!
       });
+    }
   });
   const reuslt = await Promise.allSettled(deletePromises);
-  console.log(reuslt);
   return reuslt;
 };

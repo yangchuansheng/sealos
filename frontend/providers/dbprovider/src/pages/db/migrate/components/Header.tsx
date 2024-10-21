@@ -1,5 +1,6 @@
 import MyIcon from '@/components/Icon';
 import { DBType } from '@/types/db';
+import { I18nCommonKey } from '@/types/i18next';
 import { Box, Button, Flex } from '@chakra-ui/react';
 import { useTranslation } from 'next-i18next';
 import { useRouter } from 'next/router';
@@ -12,10 +13,10 @@ const Header = ({
   applyBtnText
 }: {
   dbName: string;
-  title: string;
+  title: I18nCommonKey;
   dbType: DBType;
   applyCb: () => void;
-  applyBtnText: string;
+  applyBtnText: I18nCommonKey;
 }) => {
   const { t } = useTranslation();
   const router = useRouter();
@@ -36,14 +37,13 @@ const Header = ({
           })
         }
       >
-        <MyIcon name="arrowLeft" />
-        <Box ml={6} fontWeight={'bold'} color={'black'} fontSize={'3xl'}>
+        <MyIcon name="arrowLeft" w={'24px'} />
+        <Box fontWeight={'bold'} color={'grayModern.900'} fontSize={'2xl'}>
           {t(title)}
         </Box>
       </Flex>
       <Box flex={1}></Box>
-
-      <Button flex={'0 0 140px'} h={'40px'} variant={'primary'} onClick={applyCb}>
+      <Button flex={'0 0 140px'} h={'40px'} variant={'solid'} onClick={applyCb}>
         {t(applyBtnText)}
       </Button>
     </Flex>

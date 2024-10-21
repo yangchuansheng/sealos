@@ -12,10 +12,13 @@ import Introduce from './components/Introduce';
 import HomeUserBy from './components/UserBy';
 import './index.scss';
 import Head from '@docusaurus/Head';
+import SaleBanner from '../components/SaleBanner';
+import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 
 const Home = () => {
-  const { screenWidth, cloudUrl, currentLanguage } = useWindow();
+  const { screenWidth } = useWindow();
   const isPc = useMemo(() => screenWidth > PC_MIN_WIDTH, [screenWidth]);
+  const { i18n } = useDocusaurusContext();
 
   useEffect(() => {
     const loadUmamiScript = () => {
@@ -26,11 +29,6 @@ const Home = () => {
         script1.setAttribute('data-website-id', 'e5a8009f-7cb6-4841-9522-d23b96216b7a');
         script1.async = true;
         document.head.appendChild(script1);
-
-        const scriptBaidu = document.createElement('script');
-        scriptBaidu.src = 'https://hm.baidu.com/hm.js?508769a0373e6443cbdf6fa135104b4b';
-        scriptBaidu.async = true;
-        document.head.appendChild(scriptBaidu);
       } else {
         const script2 = document.createElement('script');
         script2.src = 'https://umami.cloud.sealos.io/oishii';
@@ -44,18 +42,46 @@ const Home = () => {
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const bd_vidValue = urlParams.get('bd_vid');
-    sessionStorage.setItem('bd_vid', bd_vidValue);
+    const params: Record<string, string> = {};
+
+    const bd_vid = urlParams.get('bd_vid');
+    if (bd_vid) params.bd_vid = bd_vid;
+
+    const k = urlParams.get('k');
+    if (k) params.keywords = k;
+
+    const s = urlParams.get('s');
+    if (s) params.s = s;
+
+    if (Object.keys(params).length > 0) {
+      sessionStorage.setItem('sealos_sem', JSON.stringify(params));
+    }
   }, []);
 
   const HomeRender = (
     <div id="sealos-layout-wrap-home-page">
       <Head>
         <title>
-          {currentLanguage === 'en'
+          {i18n.currentLocale === 'en'
             ? 'Sealos'
             : 'Sealos: 专为云原生开发打造的以 K8s 为内核的云操作系统'}
         </title>
+        <meta
+          name="keywords"
+          content={
+            i18n.currentLocale === 'en'
+              ? 'Sealos, Docker, Kubernetes, cloud operating system, container orchestration, microservices, DevOps, containerization, cloud infrastructure, hybrid cloud, multi-cloud management, scalable cloud solutions, Container-as-a-Service, cloud-native'
+              : 'Sealos,Docker,Kubernetes,云操作系统,云管理平台,云管理,容器云,企业级容器云,容器云部署,容器云厂商,云原生'
+          }
+        />
+        <meta
+          name="description"
+          content={
+            i18n.currentLocale === 'en'
+              ? 'Sealos: Next-gen cloud OS with Kubernetes core. Manage multi-region enterprise container clouds effortlessly. Deploy databases instantly, auto-scale resources, ensure top security. Trusted by 100,000+ firms, 1M+ devs. Simplify your cloud journey now!'
+              : 'Sealos云操作系统,Kubernetes 云内核,多 Region 统一管理,以应用为中心的企业级容器云,秒级创建高可用数据库,自动伸缩杜绝资源浪费,一键创建容器集群,端到端的应用安全保障，支持多种复杂应用场景快速上云,超10w+企业,近百万开发者在线使用。'
+          }
+        />
       </Head>
       <Helmet>
         <script async src="https://www.googletagmanager.com/gtag/js?id=AW-786053845" />
@@ -75,7 +101,7 @@ const Home = () => {
           <Capability isPc={isPc} />
           <Introduce isPc={isPc} />
           <Community isPc={isPc} />
-          <HomeUserBy isPc={isPc} />
+          {/* <HomeUserBy isPc={isPc} /> */}
           <HomeFooter isPc={isPc} />
         </div>
       </Layout>

@@ -91,9 +91,12 @@ spec:
                 type: integer
               domain:
                 type: string
+              serviceName:
+                type: string
             required:
             - availableReplicas
             - domain
+            - serviceName
             type: object
         type: object
     served: true
@@ -342,6 +345,12 @@ data:
     # if you are doing or is intended to do any operation such as perform cleanups
     # after the manager stops then its usage might be unsafe.
     # leaderElectionReleaseOnCancel: true
+  config.yaml: |
+    global:
+      cloudDomain: {{ .cloudDomain }}
+      cloudPort: {{ if .cloudPort }}{{ .cloudPort }}{{ end }}
+    terminalController:
+      ingressTLSSecretName: {{ .wildcardCertSecretName }}
 kind: ConfigMap
 metadata:
   name: terminal-manager-config
@@ -396,11 +405,11 @@ spec:
           protocol: TCP
         resources:
           limits:
-            cpu: 500m
-            memory: 128Mi
+            cpu: 1000m
+            memory: 1024Mi
           requests:
-            cpu: 5m
-            memory: 64Mi
+            cpu: 50m
+            memory: 128Mi
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -411,21 +420,15 @@ spec:
         - --health-probe-bind-address=:8081
         - --metrics-bind-address=127.0.0.1:8080
         - --leader-elect
+        - --config-file-path=/config.yaml
         command:
         - /manager
-        env:
-        - name: USER_NAMESPACE
-          value: {{ .userNamespace }}
-        - name: DOMAIN
-          value: {{ .cloudDomain }}
-        - name: PORT
-          value: '{{ .cloudPort }}'
-        - name: SECRET_NAME
-          value: {{ .wildcardCertSecretName }}
-        - name: SECRET_NAMESPACE
-          value: {{ .wildcardCertSecretNamespace }}
         image: ghcr.io/labring/sealos-terminal-controller:latest
         imagePullPolicy: Always
+        volumeMounts:
+        - name: terminal-manager-volume
+          mountPath: /config.yaml
+          subPath: config.yaml
         livenessProbe:
           httpGet:
             path: /healthz
@@ -456,3 +459,19 @@ spec:
         runAsNonRoot: true
       serviceAccountName: terminal-controller-manager
       terminationGracePeriodSeconds: 10
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: "control-plane"
+                  operator: In
+                  values:
+                  - controller-manager
+              topologyKey: "kubernetes.io/hostname"
+      volumes:
+        - name: terminal-manager-volume
+          configMap:
+            name: terminal-manager-config

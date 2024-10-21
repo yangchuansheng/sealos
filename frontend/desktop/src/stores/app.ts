@@ -1,11 +1,13 @@
 import request from '@/services/request';
-import { APPTYPE, TApp, TOSState, WindowSize, displayType } from '@/types';
+import { APPTYPE, TApp, TAppMenuData, TOSState, WindowSize, displayType } from '@/types';
+import { formatUrl } from '@/utils/format';
+import { cloneDeep, minBy } from 'lodash';
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import AppStateManager from '../utils/ProcessManager';
-import { formatUrl } from '@/utils/format';
-import { minBy, cloneDeep } from 'lodash';
+import { useDesktopConfigStore } from './desktopConfig';
+
 export class AppInfo {
   pid: number;
   isShow: boolean;
@@ -26,16 +28,13 @@ export class AppInfo {
   gallery?: string[];
   extra?: {};
   // app top info
-  menuData?: {
-    nameColor: string;
-    helpDropDown: boolean;
-    helpDocs: boolean | string;
-  };
+  menuData?: TAppMenuData[];
   displayType: displayType;
   i18n?: any;
+
   constructor(app: TApp, pid: number) {
     this.isShow = false;
-    this.zIndex = 1;
+    this.zIndex = 10; // It cannot be 1 anymore, leaving space for other components
     this.size = 'maximize';
     this.cacheSize = 'maximize';
     this.style = cloneDeep(app.style);
@@ -62,28 +61,35 @@ const useAppStore = create<TOSState>()(
         runningInfo: [],
         // present of highest layer
         currentAppPid: -1,
-        maxZIndex: 0,
+        maxZIndex: 10,
         launchQuery: {},
         autolaunch: '',
+        autolaunchWorkspaceUid: '',
         runner: new AppStateManager([]),
-        init: async () => {
+        async init() {
           const res = await request('/api/desktop/getInstalledApps');
           set((state) => {
             state.installedApps = res?.data?.map((app: TApp) => new AppInfo(app, -1));
             state.runner.loadApps(state.installedApps.map((app) => app.key));
-            state.maxZIndex = 0;
+            state.maxZIndex = 10;
           });
           return get();
         },
         // should use pid to close app, but it don't support multi same app process now
         closeAppById: (pid: number) => {
+          useDesktopConfigStore.getState().temporarilyDisableAnimation();
           set((state) => {
             state.runner.closeApp(pid);
             // make sure the process is killed
             state.runningInfo = state.runningInfo.filter((item) => item.pid !== pid);
           });
         },
-
+        closeAppAll: () => {
+          set((state) => {
+            state.runner.closeAppAll();
+            state.runningInfo = [];
+          });
+        },
         installApp: (app: TApp) => {
           set((state) => {
             state.installedApps.push(new AppInfo(app, -1));
@@ -119,7 +125,8 @@ const useAppStore = create<TOSState>()(
           });
         },
 
-        openApp: async (app: TApp, { query, raw, pathname = '/' } = {}) => {
+        openApp: async (app: TApp, { query, raw, pathname = '/', appSize = 'maximize' } = {}) => {
+          useDesktopConfigStore.getState().temporarilyDisableAnimation();
           const zIndex = get().maxZIndex + 1;
           // debugger
           // 未支持多实例
@@ -130,7 +137,7 @@ const useAppStore = create<TOSState>()(
             return;
           }
           // Up to 7 apps &&  one home app
-          if (get().runningInfo.length >= 7) {
+          if (get().runningInfo.length >= 8) {
             get().deleteLeastUsedAppByIndex();
           }
           if (app.type === APPTYPE.LINK) {
@@ -138,9 +145,10 @@ const useAppStore = create<TOSState>()(
             return;
           }
           let run_app = get().runner.openApp(app.key);
+
           const _app = new AppInfo(app, run_app.pid);
           _app.zIndex = zIndex;
-          _app.size = 'maximize';
+          _app.size = appSize;
           _app.isShow = true;
           // add query to url
           if (_app.data?.url) {
@@ -184,16 +192,18 @@ const useAppStore = create<TOSState>()(
           const appToDelete = minBy(get().runningInfo, (app) => app.zIndex);
           get().runningInfo = get().runningInfo.filter((app) => app.pid !== appToDelete?.pid);
         },
-        setAutoLaunch(autolaunch, launchQuery) {
+        setAutoLaunch(autolaunch, launchQuery, autolaunchWorkspaceUid) {
           set((state) => {
             state.autolaunch = autolaunch;
             state.launchQuery = launchQuery;
+            state.autolaunchWorkspaceUid = autolaunchWorkspaceUid;
           });
         },
         cancelAutoLaunch: () => {
           set((state) => {
             state.autolaunch = '';
             state.launchQuery = {};
+            state.autolaunchWorkspaceUid = '';
           });
         }
       })),

@@ -1,22 +1,67 @@
 import { BACKUP_REMARK_LABEL_KEY, BackupTypeEnum, backupStatusMap } from '@/constants/backup';
-import { MigrationRemark, dbStatusMap } from '@/constants/db';
+import {
+  DBPreviousConfigKey,
+  DBReconfigStatusMap,
+  DBSourceConfigs,
+  MigrationRemark,
+  dbStatusMap
+} from '@/constants/db';
 import type { AutoBackupFormType, BackupCRItemType } from '@/types/backup';
-import type { KbPgClusterType, KubeBlockBackupPolicyType } from '@/types/cluster';
-import type { DBDetailType, DBEditType, DBListItemType, PodDetailType, PodEvent } from '@/types/db';
+import type {
+  KbPgClusterType,
+  KubeBlockBackupPolicyType,
+  KubeBlockOpsRequestType
+} from '@/types/cluster';
+import type {
+  DBDetailType,
+  DBEditType,
+  DBListItemType,
+  DBSourceType,
+  DBType,
+  OpsRequestItemType,
+  PodDetailType,
+  PodEvent
+} from '@/types/db';
+import { InternetMigrationCR, MigrateItemType } from '@/types/migrate';
 import {
   convertCronTime,
   cpuFormatToM,
+  decodeFromHex,
   formatPodTime,
   formatTime,
   memoryFormatToMi,
   storageFormatToNum
 } from '@/utils/tools';
-import type { CoreV1EventList, V1Pod, V1Service } from '@kubernetes/client-node';
+import type { CoreV1EventList, V1Pod } from '@kubernetes/client-node';
 import dayjs from 'dayjs';
+import { has } from 'lodash';
 import type { BackupItemType } from '../types/db';
-import { InternetMigrationCR, MigrateForm, MigrateItemType } from '@/types/migrate';
-import { SecretResponse } from '@/pages/api/getSecretByName';
-import { getMigratePodList } from '@/api/migrate';
+
+export const getDBSource = (
+  db: KbPgClusterType
+): {
+  hasSource: boolean;
+  sourceName: string;
+  sourceType: DBSourceType;
+} => {
+  const labels = db.metadata?.labels || {};
+
+  for (const config of DBSourceConfigs) {
+    if (has(labels, config.key)) {
+      return {
+        hasSource: true,
+        sourceName: labels[config.key],
+        sourceType: config.type
+      };
+    }
+  }
+
+  return {
+    hasSource: false,
+    sourceName: '',
+    sourceType: 'app_store'
+  };
+};
 
 export const adaptDBListItem = (db: KbPgClusterType): DBListItemType => {
   // compute store amount
@@ -29,12 +74,15 @@ export const adaptDBListItem = (db: KbPgClusterType): DBListItemType => {
         ? dbStatusMap[db?.status?.phase]
         : dbStatusMap.UnKnow,
     createTime: dayjs(db.metadata?.creationTimestamp).format('YYYY/MM/DD HH:mm'),
-    cpu: cpuFormatToM(db.spec?.componentSpecs?.[0]?.resources.limits.cpu),
-    memory: cpuFormatToM(db.spec?.componentSpecs?.[0]?.resources.limits.memory),
+    cpu: cpuFormatToM(db.spec?.componentSpecs?.[0]?.resources?.limits?.cpu),
+    memory: cpuFormatToM(db.spec?.componentSpecs?.[0]?.resources?.limits?.memory),
     storage:
       db.spec?.componentSpecs?.[0]?.volumeClaimTemplates?.[0]?.spec?.resources?.requests?.storage ||
       '-',
-    conditions: db?.status?.conditions || []
+    conditions: db?.status?.conditions || [],
+    isDiskSpaceOverflow: false,
+    labels: db.metadata.labels || {},
+    source: getDBSource(db)
   };
 };
 
@@ -55,8 +103,42 @@ export const adaptDBDetail = (db: KbPgClusterType): DBDetailType => {
     storage: storageFormatToNum(
       db.spec?.componentSpecs?.[0]?.volumeClaimTemplates?.[0]?.spec?.resources?.requests?.storage
     ),
-    conditions: db?.status?.conditions || []
+    conditions: db?.status?.conditions || [],
+    isDiskSpaceOverflow: false,
+    labels: db.metadata.labels || {},
+    source: getDBSource(db)
   };
+};
+
+export const adaptBackupByCluster = (db: KbPgClusterType): AutoBackupFormType => {
+  const backup = db.spec.backup
+    ? adaptPolicy({
+        metadata: {
+          name: db.metadata.name,
+          uid: db.metadata.uid
+        },
+        spec: {
+          retention: {
+            ttl: db.spec.backup.retentionPeriod
+          },
+          schedule: {
+            datafile: {
+              cronExpression: db.spec.backup.cronExpression,
+              enable: db.spec.backup.enabled
+            }
+          }
+        }
+      })
+    : {
+        start: false,
+        hour: '18',
+        minute: '00',
+        week: [],
+        type: 'day',
+        saveTime: 7,
+        saveType: 'd'
+      };
+  return backup;
 };
 
 export const adaptDBForm = (db: DBDetailType): DBEditType => {
@@ -118,17 +200,22 @@ export const adaptEvents = (events: CoreV1EventList): PodEvent[] => {
 
 export const adaptBackup = (backup: BackupCRItemType): BackupItemType => {
   const autoLabel = 'dataprotection.kubeblocks.io/autobackup';
+  const passwordLabel = 'dataprotection.kubeblocks.io/connection-password';
+  const remark = backup.metadata.labels[BACKUP_REMARK_LABEL_KEY];
+
   return {
     id: backup.metadata.uid,
     name: backup.metadata.name,
+    namespace: backup.metadata.namespace,
     status:
       backup.status?.phase && backupStatusMap[backup.status.phase]
         ? backupStatusMap[backup.status.phase]
         : backupStatusMap.UnKnow,
     startTime: backup.metadata.creationTimestamp,
     type: autoLabel in backup.metadata.labels ? BackupTypeEnum.auto : BackupTypeEnum.manual,
-    remark: backup.metadata.labels[BACKUP_REMARK_LABEL_KEY] || '-',
-    failureReason: backup.status?.failureReason
+    remark: remark ? decodeFromHex(remark) : '-',
+    failureReason: backup.status?.failureReason,
+    connectionPassword: backup.metadata?.annotations?.[passwordLabel]
   };
 };
 
@@ -212,5 +299,44 @@ export const adaptMigrateList = (item: InternetMigrationCR): MigrateItemType => 
     status: item.status?.taskStatus,
     startTime: formatTime(item.metadata?.creationTimestamp || ''),
     remark: item.metadata.labels[MigrationRemark] || '-'
+  };
+};
+
+export const adaptOpsRequest = (
+  item: KubeBlockOpsRequestType,
+  dbType: DBType
+): OpsRequestItemType => {
+  const config = item.metadata.annotations?.[DBPreviousConfigKey];
+
+  let previousConfigurations: {
+    [key: string]: string;
+  } = {};
+
+  if (config) {
+    try {
+      const confObject = JSON.parse(config);
+      Object.entries(confObject).forEach(([key, value]) => {
+        previousConfigurations[key] =
+          typeof value === 'string' ? value.replace(/^['"](.*)['"]$/, '$1') : String(value);
+      });
+    } catch (error) {
+      console.error('Error parsing postgresql.conf annotation:', error);
+    }
+  }
+
+  return {
+    id: item.metadata.uid,
+    name: item.metadata.name,
+    namespace: item.metadata.namespace,
+    status:
+      item.status?.phase && DBReconfigStatusMap[item.status.phase]
+        ? DBReconfigStatusMap[item.status.phase]
+        : DBReconfigStatusMap.Creating,
+    startTime: item.metadata?.creationTimestamp,
+    configurations: item.spec.reconfigure.configurations[0].keys[0].parameters.map((param) => ({
+      parameterName: param.key,
+      newValue: param.value,
+      oldValue: previousConfigurations[param.key]
+    }))
   };
 };

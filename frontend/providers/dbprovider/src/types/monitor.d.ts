@@ -1,3 +1,5 @@
+import { I18nCommonKey } from './i18next';
+
 export interface MonitorDBResult {
   status: string;
   data: {
@@ -56,7 +58,7 @@ export type ChartTemplateProps = {
   dbName: string;
   dbType: string;
   apiUrl: string;
-  chartTitle: string;
+  chartTitle: I18nCommonKey;
   isShowLegend?: boolean;
   db?: DBDetailType;
   queryKey?: keyof MonitorQueryKey;
@@ -67,4 +69,16 @@ export type ChartTemplateProps = {
 export type MonitorChartList = ChartTemplateProps & {
   monitorType: string;
   isShowDB?: string[];
+};
+
+export type MonitorChartDataResult = {
+  xData: number[];
+  yData: {
+    name: string | undefined;
+    data: number[];
+  }[];
+};
+
+export type AdapterChartDataType = {
+  [key: string]: (data: MonitorDBResult) => MonitorChartDataResult;
 };

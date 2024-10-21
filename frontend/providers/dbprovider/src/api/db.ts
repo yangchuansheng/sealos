@@ -1,15 +1,33 @@
 import { GET, POST, DELETE } from '@/services/request';
 import { adaptDBListItem, adaptDBDetail, adaptPod, adaptEvents } from '@/utils/adapt';
-import type { DBType, PodDetailType } from '@/types/db';
+import type {
+  BackupItemType,
+  DBEditType,
+  DBType,
+  OpsRequestItemType,
+  PodDetailType
+} from '@/types/db';
 import { json2Restart } from '@/utils/json2Yaml';
 import { json2StartOrStop } from '../utils/json2Yaml';
 import type { SecretResponse } from '@/pages/api/getSecretByName';
 import { V1Service, V1StatefulSet } from '@kubernetes/client-node';
+import { KbPgClusterType } from '@/types/cluster';
+import { MonitorChartDataResult } from '@/types/monitor';
 
-export const getMyDBList = () => GET('/api/getDBList').then((data) => data.map(adaptDBListItem));
+export const getMyDBList = () =>
+  GET<KbPgClusterType[]>('/api/getDBList').then((data) => data.map(adaptDBListItem));
 
 export const getDBByName = (name: string) =>
   GET(`/api/getDBByName?name=${name}`).then(adaptDBDetail);
+
+export const getConfigByName = ({ name, dbType }: { name: string; dbType: DBType }) =>
+  GET<string>(`/api/getConfigByName?name=${name}&dbType=${dbType}`);
+
+export const createDB = (payload: {
+  dbForm: DBEditType;
+  isEdit: boolean;
+  backupInfo?: BackupItemType;
+}) => POST(`/api/createDB`, payload);
 
 export const getDBEvents = (name: string) => GET(`/api/getDBEvents?name=${name}`);
 
@@ -28,6 +46,9 @@ export const getPodLogs = (data: {
   podName: string;
   stream: boolean;
   logSize?: number;
+  dbType: string;
+  sinceTime?: number;
+  previous?: boolean;
 }) => POST<string>(`/api/pod/getPodLogs`, data);
 
 export const getPodEvents = (podName: string) =>
@@ -64,3 +85,29 @@ export const delDBServiceByName = (name: string) => DELETE('/api/delServiceByNam
 
 export const getDBStatefulSetByName = (name: string, dbType: DBType) =>
   GET<V1StatefulSet>(`/api/getStatefulSetByName?name=${name}&dbType=${dbType}`);
+
+export const adapterMongoHaConfig = (payload: { name: string }) =>
+  POST('/api/adapter/mongodb', payload);
+
+export const getMonitorData = (payload: {
+  dbName: string;
+  dbType: string;
+  queryKey: string;
+  start: number;
+  end: number;
+}) => GET<{ result: MonitorChartDataResult }>(`/api/monitor/getMonitorData`, payload);
+
+export const getOpsRequest = ({
+  name,
+  label,
+  dbType
+}: {
+  name: string;
+  label: string;
+  dbType: DBType;
+}) =>
+  GET<OpsRequestItemType[]>(`/api/opsrequest/list`, {
+    name,
+    label,
+    dbType
+  });

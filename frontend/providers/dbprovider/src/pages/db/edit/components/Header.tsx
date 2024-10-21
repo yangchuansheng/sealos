@@ -8,6 +8,7 @@ import { downLoadBold } from '@/utils/tools';
 import dayjs from 'dayjs';
 import { useGlobalStore } from '@/store/global';
 import { useTranslation } from 'next-i18next';
+import { I18nCommonKey } from '@/types/i18next';
 
 const Header = ({
   dbName,
@@ -17,10 +18,10 @@ const Header = ({
   applyBtnText
 }: {
   dbName: string;
-  title: string;
+  title: I18nCommonKey;
   yamlList: YamlItemType[];
   applyCb: () => void;
-  applyBtnText: string;
+  applyBtnText: I18nCommonKey;
 }) => {
   const { t } = useTranslation();
   const router = useRouter();
@@ -42,24 +43,22 @@ const Header = ({
   return (
     <Flex w={'100%'} px={10} h={'86px'} alignItems={'center'}>
       <Flex alignItems={'center'} cursor={'pointer'} onClick={() => router.replace(lastRoute)}>
-        <MyIcon name="arrowLeft" />
-        <Box ml={6} fontWeight={'bold'} color={'black'} fontSize={'3xl'}>
+        <MyIcon name="arrowLeft" width={'24px'} height={'24px'} />
+        <Box fontWeight={'bold'} color={'grayModern.900'} fontSize={'2xl'}>
           {t(title)}
         </Box>
       </Flex>
       <Box flex={1}></Box>
-      <Button
-        h={'40px'}
-        flex={'0 0 140px'}
-        mr={5}
-        bg={'myWhite.600'}
-        borderColor={'myGray.200'}
-        variant={'base'}
-        onClick={handleExportYaml}
-      >
+      <Button h={'40px'} flex={'0 0 114px'} mr={5} variant={'outline'} onClick={handleExportYaml}>
         {t('Export')} Yaml
       </Button>
-      <Button flex={'0 0 140px'} h={'40px'} variant={'primary'} onClick={applyCb}>
+      <Button
+        className="driver-deploy-button"
+        flex={'0 0 114px'}
+        h={'40px'}
+        variant={'solid'}
+        onClick={applyCb}
+      >
         {t(applyBtnText)}
       </Button>
     </Flex>

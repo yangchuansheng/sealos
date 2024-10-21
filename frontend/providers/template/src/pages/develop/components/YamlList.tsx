@@ -1,22 +1,15 @@
-import MyIcon from '@/components/Icon';
-import YamlCode from '@/components/YamlCode/index';
-import type { QueryType, YamlItemType } from '@/types';
-import { useCopyData } from '@/utils/tools';
-import { Box, Flex, useTheme } from '@chakra-ui/react';
-import { useRouter } from 'next/router';
-import { useState } from 'react';
-import styles from './index.module.scss';
+import YamlCode from '@/components/YamlCode';
+import type { YamlItemType } from '@/types';
+import { Box, Flex, Grid } from '@chakra-ui/react';
+import { useState, memo } from 'react';
 
 const YamlList = ({ yamlList = [] }: { yamlList: YamlItemType[] }) => {
-  const theme = useTheme();
-  const router = useRouter();
-  const { name } = router.query as QueryType;
-  const { copyData } = useCopyData();
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   return (
     <Flex
       flexGrow={1}
+      // h="0"
       mt={'12px'}
       alignItems={'start'}
       zIndex={1}
@@ -38,15 +31,15 @@ const YamlList = ({ yamlList = [] }: { yamlList: YamlItemType[] }) => {
             }}
             {...(index === selectedIndex
               ? {
-                  fontWeight: 'bold',
-                  borderColor: 'myGray.900',
-                  backgroundColor: 'myWhite.600 !important'
-                }
+                fontWeight: 'bold',
+                borderColor: 'myGray.900',
+                backgroundColor: 'myWhite.600 !important'
+              }
               : {
-                  color: 'myGray.500',
-                  borderColor: 'myGray.200',
-                  backgroundColor: 'transparent'
-                })}
+                color: 'myGray.500',
+                borderColor: 'myGray.200',
+                backgroundColor: 'transparent'
+              })}
             onClick={() => setSelectedIndex(index)}
           >
             {file.filename.replace(/-.*/, '')}
@@ -54,20 +47,12 @@ const YamlList = ({ yamlList = [] }: { yamlList: YamlItemType[] }) => {
         ))}
       </Box>
       {!!yamlList[selectedIndex] && (
-        <Flex
-          w="100%"
-          h="100%"
-          className={styles.codeBox}
-          flexDirection={'column'}
-          position={'relative'}
-        >
-          <Box flex={1} h={0} bg={'#ffffff'} p={4}>
-            <YamlCode className={styles.code} content={yamlList[selectedIndex].value} />
-          </Box>
-        </Flex>
+        <Grid w="0" h="full" flex={'auto'} overflow={'auto'}>
+          <YamlCode content={yamlList[selectedIndex].value} />
+        </Grid>
       )}
     </Flex>
   );
 };
 
-export default YamlList;
+export default memo(YamlList);

@@ -10,122 +10,116 @@ import { EnvResponse } from '@/types/index';
 import { serviceSideProps } from '@/utils/i18n';
 import {
   developGenerateYamlList,
-  getTemplateDataSource,
   handleTemplateToInstanceYaml,
-  parseTemplateString
+  parseTemplateString,
+  getYamlSource
 } from '@/utils/json-yaml';
-import { getTemplateDefaultValues } from '@/utils/template';
+import { getTemplateInputDefaultValues, getTemplateValues } from '@/utils/template';
 import { downLoadBold } from '@/utils/tools';
-import { Box, Button, Flex, Text } from '@chakra-ui/react';
-import { StreamLanguage } from '@codemirror/language';
-import { yaml } from '@codemirror/legacy-modes/mode/yaml';
+import { Button, Center, Flex, Spinner, Text } from '@chakra-ui/react';
 import { useQuery } from '@tanstack/react-query';
-import CodeMirror from '@uiw/react-codemirror';
 import dayjs from 'dayjs';
-import JsYaml from 'js-yaml';
 import { debounce, has, isObject, mapValues } from 'lodash';
 import { useTranslation } from 'next-i18next';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import ErrorModal from '../deploy/components/ErrorModal';
 import BreadCrumbHeader from './components/BreadCrumbHeader';
 import Form from './components/Form';
 import YamlList from './components/YamlList';
+import Editor from './components/Editor';
 
 export default function Develop() {
   const { t } = useTranslation();
-  const [yamlValue, setYamlValue] = useState('');
   const { toast } = useToast();
-  const [yamlSource, setYamlSource] = useState<TemplateSourceType>();
+  const [templateSource, setTemplateSource] = useState<TemplateSourceType>();
   const [yamlList, setYamlList] = useState<YamlItemType[]>([]);
   const { Loading, setIsLoading } = useLoading();
   const [errorMessage, setErrorMessage] = useState('');
-  const { title, applyBtnText, applyMessage, applySuccess, applyError } = editModeMap(false);
+  const { applySuccess, applyError } = editModeMap(false);
   const SuccessfulDryRun = useRef(false);
-
   const { data: platformEnvs } = useQuery(['getPlatformEnvs'], getPlatformEnv) as {
     data: EnvResponse;
   };
 
-  const onYamlChange = (value: string) => {
-    setYamlValue(value);
-    parseTemplate(value);
-  };
+  const generateYamlData = useCallback(
+    (yamlSource: TemplateSourceType, inputs: Record<string, string> = {}): YamlItemType[] => {
+      const { defaults, defaultInputs } = getTemplateValues(yamlSource);
+      const data = {
+        ...platformEnvs,
+        ...yamlSource?.source,
+        inputs: {
+          ...defaultInputs,
+          ...inputs
+        },
+        defaults: defaults
+      };
+      const generateStr = parseTemplateString(yamlSource.appYaml, data);
+      const _instanceName = yamlSource?.source?.defaults?.app_name?.value || '';
+      return developGenerateYamlList(generateStr, _instanceName);
+    },
+    [platformEnvs]
+  );
 
-  const getYamlSource = (str: string): TemplateSourceType => {
-    const yamlData = JsYaml.loadAll(str);
-    const templateYaml: TemplateType = yamlData.find(
-      (item: any) => item.kind === 'Template'
-    ) as TemplateType;
-    const yamlList = yamlData.filter((item: any) => item.kind !== 'Template');
-    const dataSource = getTemplateDataSource(templateYaml, platformEnvs);
-    const _instanceName = dataSource?.defaults?.app_name?.value || '';
-    const instanceYaml = handleTemplateToInstanceYaml(templateYaml, _instanceName);
-    yamlList.unshift(instanceYaml);
-    const result: TemplateSourceType = {
-      source: {
-        ...dataSource,
-        ...platformEnvs
-      },
-      yamlList: yamlList,
-      templateYaml: templateYaml
-    };
-    return result;
-  };
+  const parseTemplate = useCallback(
+    (str: string) => {
+      if (!str || !str.trim()) {
+        setTemplateSource(void 0);
+        setYamlList([]);
+        return;
+      }
+      try {
+        const result = getYamlSource(str, platformEnvs);
+        const formInputs = formHook.getValues();
+        setTemplateSource(result);
+        const correctYamlList = generateYamlData(result, formInputs);
+        setYamlList(correctYamlList);
+      } catch (error: any) {
+        toast({
+          title: 'Parsing Yaml Error',
+          status: 'error',
+          description: <pre style={{ whiteSpace: 'pre-wrap' }}>{error?.message}</pre>,
+          duration: 4000,
+          isClosable: true
+        });
+      }
+    },
+    [platformEnvs, generateYamlData]
+  );
 
-  const generateCorrectYamlList = (
-    yamlSource: TemplateSourceType,
-    inputsForm = {}
-  ): YamlItemType[] => {
-    const yamlString = yamlSource?.yamlList?.map((item) => JsYaml.dump(item)).join('---\n');
-    const output = mapValues(yamlSource?.source.defaults, (value) => value.value);
-    const generateStr = parseTemplateString(yamlString, /\$\{\{\s*(.*?)\s*\}\}/g, {
-      ...yamlSource?.source,
-      inputs: inputsForm,
-      defaults: output
-    });
-    const _instanceName = yamlSource?.source?.defaults?.app_name?.value || '';
-    return developGenerateYamlList(generateStr, _instanceName);
-  };
-
-  const parseTemplate = (str: string) => {
-    try {
-      const result = getYamlSource(str);
-      const defaultInputes = getTemplateDefaultValues(result);
-      setYamlSource(result);
-      const correctYamlList = generateCorrectYamlList(result, defaultInputes);
-      setYamlList(correctYamlList);
-    } catch (error: any) {
-      toast({
-        title: 'Parsing Yaml Error',
-        status: 'error',
-        description: <pre style={{ whiteSpace: 'pre-wrap' }}>{error?.message}</pre>,
-        duration: 4000,
-        isClosable: true
-      });
-    }
-  };
+  const onYamlChange = useCallback(
+    debounce((doc: string) => {
+      parseTemplate(doc);
+    }, 1000),
+    [parseTemplate]
+  );
 
   // form
   const formHook = useForm({
-    defaultValues: getTemplateDefaultValues(yamlSource)
+    defaultValues: getTemplateInputDefaultValues(templateSource)
   });
+
+  const formOnchangeDebounce = useCallback(
+    debounce((formInputData: Record<string, string>) => {
+      try {
+        if (templateSource) {
+          const correctYamlList = generateYamlData(templateSource, formInputData);
+          setYamlList(correctYamlList);
+        }
+      } catch (error) {
+        console.log(error);
+      }
+    }, 500),
+    [templateSource, generateYamlData]
+  );
 
   // watch form change, compute new yaml
-  formHook.watch((data: any) => {
-    data && formOnchangeDebounce(data);
-  });
-
-  const formOnchangeDebounce = debounce((data: any) => {
-    try {
-      if (yamlSource) {
-        const correctYamlList = generateCorrectYamlList(yamlSource, data);
-        setYamlList(correctYamlList);
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  }, 1000);
+  useEffect(() => {
+    const subscription = formHook.watch((data: Record<string, string>) => {
+      data && formOnchangeDebounce(data);
+    });
+    return () => subscription.unsubscribe();
+  }, [formHook, formOnchangeDebounce]);
 
   const submitSuccess = async () => {
     setIsLoading(true);
@@ -151,7 +145,6 @@ export default function Develop() {
   };
 
   const submitError = () => {
-    formHook.getValues();
     function deepSearch(obj: any): string {
       if (has(obj, 'message')) {
         return obj.message;
@@ -187,6 +180,7 @@ export default function Develop() {
   }, [yamlList]);
 
   const formalApply = async () => {
+    setIsLoading(true);
     try {
       if (yamlList.length !== 0 && SuccessfulDryRun.current) {
         const result: string[] = await postDeployApp(yamlList.map((item) => item.value));
@@ -198,6 +192,7 @@ export default function Develop() {
     } catch (error) {
       console.log(error, 'FormalApply');
     }
+    setIsLoading(false);
   };
 
   return (
@@ -212,7 +207,8 @@ export default function Develop() {
         borderRadius={'8px'}
         overflowY={'hidden'}
         overflowX={'scroll'}
-        flex={1}>
+        flex={1}
+      >
         {/* left */}
         <Flex flexDirection={'column'} w="50%" borderRight={'1px solid #EFF0F1'}>
           <Flex
@@ -222,7 +218,8 @@ export default function Develop() {
             alignItems={'center'}
             backgroundColor={'#F8FAFB'}
             px="36px"
-            borderRadius={'8px 8px 0px 0px '}>
+            borderRadius={'8px 8px 0px 0px '}
+          >
             <MyIcon name="dev" color={'#24282C'} w={'24px'} h={'24px'}></MyIcon>
             <Text fontWeight={'500'} fontSize={'16px'} color={'#24282C'} ml="8px">
               {t('develop.Development')}
@@ -231,15 +228,15 @@ export default function Develop() {
               {t('develop.Please enter YAML code')}
             </Text>
           </Flex>
-          <Box h="100%" w="100%" position={'relative'} overflow={'auto'}>
-            <CodeMirror
-              extensions={[StreamLanguage.define(yaml)]}
-              width="100%"
-              height="100%"
-              minHeight="1200px"
-              onChange={debounce(onYamlChange, 1000)}
+          {platformEnvs && (
+            <Editor
+              h="100%"
+              w="100%"
+              position={'relative'}
+              overflow={'auto'}
+              onDocChange={onYamlChange}
             />
-          </Box>
+          )}
         </Flex>
         {/* right */}
         <Flex w="50%" flexDirection={'column'} position={'relative'}>
@@ -250,7 +247,8 @@ export default function Develop() {
             alignItems={'center'}
             backgroundColor={'#F8FAFB'}
             pl="42px"
-            borderRadius={'8px 8px 0px 0px '}>
+            borderRadius={'8px 8px 0px 0px '}
+          >
             <MyIcon name="eyeShow" color={'#24282C'} w={'24px'} h={'24px'}></MyIcon>
             <Text fontWeight={'500'} fontSize={'16px'} color={'#24282C'} ml="8px">
               {t('develop.Preview')}
@@ -262,11 +260,12 @@ export default function Develop() {
               pt="26px"
               pr={{ sm: '20px', md: '60px' }}
               borderBottom={'1px solid #EFF0F1'}
-              flexDirection={'column'}>
+              flexDirection={'column'}
+            >
               <Text fontWeight={'500'} fontSize={'18px'} color={'#24282C'}>
                 {t('develop.Configure Form')}
               </Text>
-              <Form formSource={yamlSource!} formHook={formHook} />
+              <Form formSource={templateSource!} formHook={formHook} platformEnvs={platformEnvs} />
             </Flex>
             <Flex flex={1} pl="42px" pt="26px" flexDirection={'column'} position={'relative'}>
               <Flex alignItems={'center'} justifyContent={'space-between'}>
@@ -278,7 +277,8 @@ export default function Develop() {
                   minW={'100px'}
                   h={'34px'}
                   variant={'link'}
-                  onClick={handleExportYaml}>
+                  onClick={handleExportYaml}
+                >
                   {t('Export')} Yaml
                 </Button>
               </Flex>

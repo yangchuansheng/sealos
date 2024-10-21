@@ -105,3 +105,36 @@ func confirmNonOddMasters() error {
 	}
 	return nil
 }
+
+type ContainerdChecker struct {
+	IPs []string
+}
+
+func NewContainerdChecker(ips []string) Interface {
+	return &ContainerdChecker{IPs: ips}
+}
+
+func (a ContainerdChecker) Check(cluster *v2.Cluster, _ string) error {
+	var ipList []string
+	if len(a.IPs) != 0 {
+		ipList = a.IPs
+	}
+	sshClient := ssh.NewCacheClientFromCluster(cluster, false)
+	execer, err := exec.New(sshClient)
+	if err != nil {
+		return err
+	}
+	return checkContainerd(execer, ipList)
+}
+
+// Check whether the containerd is installed
+func checkContainerd(s exec.Interface, ipList []string) error {
+	logger.Info("checker:containerd %v", ipList)
+	for _, ip := range ipList {
+		_, err := s.CmdToString(ip, "containerd --version", "")
+		if err == nil {
+			return fmt.Errorf("containerd is installed on %s please uninstall it first", ip)
+		}
+	}
+	return nil
+}

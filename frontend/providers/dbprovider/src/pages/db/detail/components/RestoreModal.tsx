@@ -1,45 +1,43 @@
-import React from 'react';
+import { createDB } from '@/api/db';
+import Tip from '@/components/Tip';
+import { BackupItemType, DBDetailType } from '@/types/db';
+import { getErrText } from '@/utils/tools';
+import { InfoOutlineIcon } from '@chakra-ui/icons';
 import {
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalCloseButton,
   Box,
   Button,
   Flex,
-  Input
+  Input,
+  Modal,
+  ModalBody,
+  ModalCloseButton,
+  ModalContent,
+  ModalHeader,
+  ModalOverlay
 } from '@chakra-ui/react';
+import { useMessage } from '@sealos/ui';
 import { useMutation } from '@tanstack/react-query';
-import { getErrText } from '@/utils/tools';
-import { useToast } from '@/hooks/useToast';
 import { customAlphabet } from 'nanoid';
-const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz1234567890', 6);
-import Tip from '@/components/Tip';
-import { InfoOutlineIcon } from '@chakra-ui/icons';
 import { useTranslation } from 'next-i18next';
-import { useForm } from 'react-hook-form';
-import { DBDetailType } from '@/types/db';
-import { json2CreateCluster, json2Account } from '@/utils/json2Yaml';
 import { useRouter } from 'next/router';
-import { applyYamlList } from '@/api/db';
+import { useForm } from 'react-hook-form';
+const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz1234567890', 6);
 
-const BackupModal = ({
+const RestoreModal = ({
   db,
-  backupName,
+  backupInfo,
   onClose,
   onSuccess
 }: {
   db: DBDetailType;
-  backupName: string;
+  backupInfo: BackupItemType;
   onClose: () => void;
   onSuccess?: () => void;
 }) => {
   if (!db) return <></>;
   const router = useRouter();
   const { t } = useTranslation();
-  const { toast } = useToast();
+  const { message: toast } = useMessage();
 
   const { register, handleSubmit, getValues } = useForm({
     defaultValues: {
@@ -53,14 +51,17 @@ const BackupModal = ({
         ...db,
         dbName: databaseName
       };
-      const yamlList = [json2CreateCluster(dbData, backupName), json2Account(dbData)];
-      return applyYamlList(yamlList, 'create');
+      return createDB({
+        dbForm: dbData,
+        isEdit: false,
+        backupInfo: backupInfo
+      });
     },
     onSuccess() {
       router.replace(`/dbs`);
       toast({
         status: 'success',
-        title: t('Restore Success')
+        title: t('restore_success')
       });
       onClose();
     },
@@ -76,25 +77,25 @@ const BackupModal = ({
 
   return (
     <>
-      <Modal isOpen onClose={onClose}>
+      <Modal isOpen onClose={onClose} lockFocusAcrossFrames={false}>
         <ModalOverlay />
         <ModalContent maxW={'min(600px, 90vw)'}>
-          <ModalHeader>{t('Restore Database')}</ModalHeader>
+          <ModalHeader>{t('restore_database')}</ModalHeader>
           <ModalCloseButton />
           <ModalBody display={'flex'} pb={8}>
-            <Box px={'50px'}>
+            <Box>
               <Tip
                 icon={<InfoOutlineIcon fontSize={'16px'} />}
                 size="sm"
-                text={t('Restore Backup Tip')}
+                text={t('restore_backup_tip')}
+                borderRadius={'md'}
               />
               <Box>
                 <Flex mt={8} alignItems={'center'}>
-                  <Box flex={'0 0 120px'}>{t('Database Name')}</Box>
+                  <Box flex={'0 0 120px'}>{t('database_name')}</Box>
                   <Input
-                    bg={'myWhite.300'}
                     {...register('databaseName', {
-                      required: t('Database Name cannot empty') || 'Database Name cannot empty'
+                      required: t('database_name_cannot_empty')
                     })}
                   />
                 </Flex>
@@ -102,7 +103,7 @@ const BackupModal = ({
               <Box mt={10} textAlign={'end'}>
                 <Button
                   isLoading={isLoading}
-                  variant={'primary'}
+                  variant={'solid'}
                   // @ts-ignore
                   onClick={() => handleSubmit(onclickRestore)()}
                 >
@@ -117,4 +118,4 @@ const BackupModal = ({
   );
 };
 
-export default BackupModal;
+export default RestoreModal;

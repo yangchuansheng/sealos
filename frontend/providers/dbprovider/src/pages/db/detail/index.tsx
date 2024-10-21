@@ -1,30 +1,33 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Flex, Button, useTheme } from '@chakra-ui/react';
-import { useQuery } from '@tanstack/react-query';
-import { useDBStore } from '@/store/db';
-import { useToast } from '@/hooks/useToast';
 import { useLoading } from '@/hooks/useLoading';
+import { useDBStore } from '@/store/db';
+import useEnvStore from '@/store/env';
 import { useGlobalStore } from '@/store/global';
-import { serviceSideProps } from '@/utils/i18n';
-import { useRouter } from 'next/router';
-import Header from './components/Header';
-import AppBaseInfo from './components/AppBaseInfo';
-import Pods from './components/Pods';
-import BackupTable, { type ComponentRef } from './components/BackupTable';
-import { useTranslation } from 'next-i18next';
-import { DBTypeEnum, dbStatusMap } from '@/constants/db';
-import Monitor from './components/Monitor';
-import dayjs from 'dayjs';
-import DumpImport from './components/DumpImport';
-import MigrateTable from './components/Migrate/Table';
 import { DBType } from '@/types/db';
+import { serviceSideProps } from '@/utils/i18n';
+import { Box, Button, Flex, useTheme } from '@chakra-ui/react';
+import { useMessage } from '@sealos/ui';
+import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'next-i18next';
+import { useRouter } from 'next/router';
+import { useMemo, useRef, useState } from 'react';
+import AppBaseInfo from './components/AppBaseInfo';
+import BackupTable, { type ComponentRef } from './components/BackupTable';
+import DumpImport from './components/DumpImport';
+import Header from './components/Header';
+import MigrateTable from './components/Migrate/Table';
+import Monitor from './components/Monitor';
+import Pods from './components/Pods';
+import { I18nCommonKey } from '@/types/i18next';
+import ReconfigureTable from './components/Reconfigure/index';
+import useDetailDriver from '@/hooks/useDetailDriver';
 
 enum TabEnum {
   pod = 'pod',
   backup = 'backup',
   monitor = 'monitor',
   InternetMigration = 'InternetMigration',
-  DumpImport = 'DumpImport'
+  DumpImport = 'DumpImport',
+  Reconfigure = 'reconfigure'
 }
 
 const AppDetail = ({
@@ -36,26 +39,28 @@ const AppDetail = ({
   dbType: DBType;
   listType: `${TabEnum}`;
 }) => {
+  useDetailDriver();
   const BackupTableRef = useRef<ComponentRef>(null);
+  const ReconfigureTableRef = useRef<ComponentRef>(null);
   const router = useRouter();
   const { t } = useTranslation();
+  const { SystemEnv } = useEnvStore();
 
   const { listNav } = useMemo(() => {
     const PublicNetMigration = ['postgresql', 'apecloud-mysql', 'mongodb'].includes(dbType);
     const MigrateSupported = ['postgresql', 'mongodb', 'apecloud-mysql'].includes(dbType);
-    const BackupSupported = ['postgresql', 'mongodb', 'apecloud-mysql', 'redis'].includes(dbType);
+    const BackupSupported =
+      ['postgresql', 'mongodb', 'apecloud-mysql', 'redis'].includes(dbType) &&
+      SystemEnv.BACKUP_ENABLED;
 
     const listNavValue = [
-      { label: 'Monitor List', value: TabEnum.monitor },
-      { label: 'Replicas List', value: TabEnum.pod },
-      ...(BackupSupported ? [{ label: 'Backup List', value: TabEnum.backup }] : []),
-      ...(MigrateSupported
-        ? PublicNetMigration
-          ? [
-              { label: 'Internet Migration', value: TabEnum.InternetMigration },
-              { label: 'File Migration', value: TabEnum.DumpImport }
-            ]
-          : [{ label: 'File Migration', value: TabEnum.DumpImport }]
+      { label: 'monitor_list', value: TabEnum.monitor },
+      { label: 'replicas_list', value: TabEnum.pod },
+      ...(PublicNetMigration ? [{ label: 'dbconfig.parameter', value: TabEnum.Reconfigure }] : []),
+      ...(BackupSupported ? [{ label: 'backup_list', value: TabEnum.backup }] : []),
+      ...(PublicNetMigration ? [{ label: 'online_import', value: TabEnum.InternetMigration }] : []),
+      ...(PublicNetMigration && !!SystemEnv.minio_url
+        ? [{ label: 'import_through_file', value: TabEnum.DumpImport }]
         : [])
     ];
 
@@ -65,10 +70,10 @@ const AppDetail = ({
       isBackupSupported: BackupSupported,
       listNav: listNavValue
     };
-  }, [dbType]);
+  }, [SystemEnv, dbType]);
 
   const theme = useTheme();
-  const { toast } = useToast();
+  const { message: toast } = useMessage();
   const { Loading } = useLoading();
   const { screenWidth } = useGlobalStore();
   const isLargeScreen = useMemo(() => screenWidth > 1280, [screenWidth]);
@@ -76,7 +81,7 @@ const AppDetail = ({
   const [showSlider, setShowSlider] = useState(false);
 
   useQuery([dbName, 'loadDBDetail', 'intervalLoadPods'], () => loadDBDetail(dbName), {
-    // refetchInterval: 3000,
+    refetchInterval: 3000,
     onError(err) {
       router.replace('/dbs');
       toast({
@@ -87,7 +92,7 @@ const AppDetail = ({
   });
 
   return (
-    <Flex flexDirection={'column'} height={'100vh'} bg={'#F3F4F5'} px={9} pb={4}>
+    <Flex flexDirection={'column'} height={'100vh'} bg={'grayModern.100'} px={9} pb={4}>
       <Box>
         <Header db={dbDetail} setShowSlider={setShowSlider} isLargeScreen={isLargeScreen} />
       </Box>
@@ -100,8 +105,8 @@ const AppDetail = ({
           zIndex={9}
           transition={'0.4s'}
           bg={'white'}
-          border={theme.borders.sm}
-          borderRadius={'md'}
+          border={theme.borders.base}
+          borderRadius={'lg'}
           {...(isLargeScreen
             ? {}
             : {
@@ -120,10 +125,10 @@ const AppDetail = ({
           w={0}
           h={'100%'}
           bg={'white'}
-          border={theme.borders.sm}
-          borderRadius={'md'}
+          border={theme.borders.base}
+          borderRadius={'lg'}
         >
-          <Flex p={'26px'} alignItems={'flex-start'}>
+          <Flex m={'26px'} mb={'8px'} alignItems={'flex-start'}>
             {listNav.map((item) => (
               <Box
                 key={item.value}
@@ -138,7 +143,7 @@ const AppDetail = ({
                       borderBottomColor: 'black'
                     }
                   : {
-                      color: 'myGray.500',
+                      color: 'grayModern.600',
                       borderBottomColor: 'transparent',
                       onClick: () =>
                         router.replace(
@@ -146,23 +151,18 @@ const AppDetail = ({
                         )
                     })}
               >
-                {t(item.label)}
+                {t(item.label as I18nCommonKey)}
               </Box>
             ))}
             <Box flex={1}></Box>
-            {listType === TabEnum.pod && <Box color={'myGray.500'}>{dbPods.length} Items</Box>}
+            {listType === TabEnum.pod && <Box color={'grayModern.600'}>{dbPods.length} Items</Box>}
             {listType === TabEnum.backup && !BackupTableRef.current?.backupProcessing && (
               <Flex alignItems={'center'}>
                 <Button
                   ml={3}
-                  variant={'primary'}
+                  height={'32px'}
+                  variant={'solid'}
                   onClick={() => {
-                    if (dbDetail.dbType === DBTypeEnum.redis) {
-                      return toast({
-                        status: 'warning',
-                        title: t('Redis does not support backup at this time')
-                      });
-                    }
                     BackupTableRef.current?.openBackup();
                   }}
                 >
@@ -174,7 +174,8 @@ const AppDetail = ({
               <Flex alignItems={'center'}>
                 <Button
                   ml={3}
-                  variant={'primary'}
+                  height={'32px'}
+                  variant={'solid'}
                   onClick={() => {
                     router.push(`/db/migrate?name=${dbName}&dbType=${dbType}`);
                   }}
@@ -192,6 +193,9 @@ const AppDetail = ({
             )}
             {listType === TabEnum.InternetMigration && <MigrateTable dbName={dbName} />}
             {listType === TabEnum.DumpImport && <DumpImport db={dbDetail} />}
+            {listType === TabEnum.Reconfigure && (
+              <ReconfigureTable ref={ReconfigureTableRef} db={dbDetail} />
+            )}
           </Box>
         </Flex>
       </Flex>

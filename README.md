@@ -1,14 +1,30 @@
 <h2 align="center">
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./docs/4.0/img/sealos-left-dark.png" />
-  <source media="(prefers-color-scheme: light)" srcset="./docs/4.0/img/sealos-left.png" />
-  <img src="./docs/4.0/img/sealos-left.png" />
-</picture>
-
+  
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/4.0/img/sealos-left-dark.png" />
+    <source media="(prefers-color-scheme: light)" srcset="./docs/4.0/img/sealos-left.png" />
+    <img src="./docs/4.0/img/sealos-left.png" />
+  </picture>
+  
 A Cloud Operating System designed for managing cloud-native applications
 
 </h2>
+
+<div align="center">
+<a
+    href="https://runacap.com/ross-index/annual-2023/"
+    target="_blank"
+    rel="noopener"
+>
+    <img
+        style="width: 260px; height: 56px"
+        src="https://runacap.com/wp-content/uploads/2024/03/Annual_ROSS_badge_black_2023.svg"
+        alt="ROSS Index - Fastest Growing Open-Source Startups | Runa Capital"
+        width="260"
+        height="56"
+    />
+</a>
+</div>
 
 <div align="center">
 
@@ -18,7 +34,7 @@ A Cloud Operating System designed for managing cloud-native applications
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Flabring%2Fsealos.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Flabring%2Fsealos?ref=badge_shield)
 [![codecov](https://codecov.io/gh/labring/sealos/branch/main/graph/badge.svg?token=e41ZDcj06N)](https://codecov.io/gh/labring/sealos)
 [![Website](https://img.shields.io/website?url=https%3A%2F%2Fpostwoman.io&logo=Postwoman)](https://sealos.io)
-[![OSCS Status](https://www.oscs1024.com/platform/badge/labring/sealos.svg?size=small)](https://www.oscs1024.com/project/labring/sealos?ref=badge_small)
+[![OSCS Status](https://www.oscs1024.com/platform/badge/labring/sealos.svg?size=small)](https://www.oscs1024.com/repo/labring/sealos?ref=badge_small)
 
 <br />
 
@@ -26,7 +42,7 @@ A Cloud Operating System designed for managing cloud-native applications
 
 </div>
 
-https://github.com/labring/sealos/assets/82700206/b1f8a25a-55cf-4d15-a47b-38cf7d507134
+https://github.com/user-attachments/assets/a7b7ed5c-0e31-4158-8a76-3b161ed70a70
 
 <p align="center">
   <a href="https://sealos.io/docs/Intro">Docs</a> |
@@ -36,33 +52,41 @@ https://github.com/labring/sealos/assets/82700206/b1f8a25a-55cf-4d15-a47b-38cf7d
 
 Sealos['siːləs] is a cloud operating system distribution based on the Kubernetes kernel. Using the cloud like using a personal computer, reducing the cost of the cloud to 1/10 of the original.
 
+<img width="916" alt="image" src="https://github.com/labring/sealos/assets/8912557/9e8c1d76-718e-4910-a9ab-94f220a61a9c">
+
+
 ## 🚀 Deploy your app on Sealos
 
-[Try online，sealos public cloud](https://cloud.sealos.io)   [sealos private cloud, local hosting](https://sealos.io/zh-Hans/self-hosting)
+[Quick Start](https://cloud.sealos.io) 
 
-* [Easily Deploy Nginx in 30 Seconds on Sealos](https://sealos.io/docs/quick-start/app-deployments/use-app-launchpad)
-* [Start a mysql/pgsql/mongo highly available database in 30 seconds on Sealos](https://sealos.io/docs/quick-start/app-deployments/install-db-with-database)
+* [Easily Deploy Nginx in 30 Seconds on Sealos](https://sealos.io/docs/quick-start/use-app-launchpad)
+* [Start a mysql/pgsql/mongo highly available database in 30 seconds on Sealos](https://sealos.io/docs/quick-start/use-database)
 * [Running WordPress on Sealos](https://sealos.io/docs/examples/blog-platform/install-wordpress)
 * [Running the Uptime Kuma dial test system on Sealos](https://docs.sealos.io/docs/examples/dial-testing-system/install-uptime-kuma)
 * [Running a low-code platform on Sealos](https://docs.sealos.io/docs/category/low-code-platform)
 
-![](/docs/4.0/img/app-launchpad.png)
+![](/docs/4.0/img/sealos-desktop.webp)
 
 🔍 Some Screen Shots of Sealos:
 
 <div align="center">
 
-| Terminal | App Launchpad |
+| Templates | App Launchpad |
 | :---: | :---: |
-| ![](/docs/4.0/img/terminal.webp) | ![](/docs/4.0/img/app-launchpad-1.webp) |
+| ![](/docs/4.0/img/templates.jpg) | ![](/docs/4.0/img/app-launchpad-1.jpg) |
 | Database | Serverless |
-| ![](/docs/4.0/img/database.webp) | ![](/docs/4.0/img/laf.webp) |
+| ![](/docs/4.0/img/database.jpg) | ![](/docs/4.0/img/laf.jpg) |
 
 </div>
 
+## Install
+
+* Install Sealos cloud: [Self hosting](https://sealos.io/self-hosting)
+* Install Kubernetes and kubernetes lifecycle managemant: [One command install kubernetes HA cluster](https://sealos.io/docs/self-hosting/lifecycle-management/quick-start/deploy-kubernetes#install-single-node-kubernetes)
+
 ## 💡 Core features
 
-- 🚀 **Application Management**: Easy management and quick release of publicly accessible distributed applications in the app store.
+- 🚀 **Application Management**: Easy management and quick release of publicly accessible distributed applications in the templates marketplace.
 - 🗄️ **Database Management**: Create high-availability databases in seconds, offering support for MySQL, PostgreSQL, MongoDB, and Redis.
 - 🌥️ **Cloud Universality**: Equally effective in both public and private cloud, enabling a seamless transition of traditional applications to the cloud.
 
@@ -82,7 +106,7 @@ Sealos['siːləs] is a cloud operating system distribution based on the Kubernet
 
 ## 🚧 Roadmap
 
-Sealos maintains a [public roadmap](https://github.com/orgs/labring/projects/4/views/9). It gives a a high-level view of the main priorities for the project, the maturity of different features and projects, and how to influence the project direction.
+Sealos maintains a [public roadmap](https://github.com/orgs/labring/projects/4/views/9). It gives a high-level view of the main priorities for the project, the maturity of different features and projects, and how to influence the project direction.
 
 ## 👩‍💻 Contributing & Development
 

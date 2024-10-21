@@ -50,23 +50,25 @@ const ReadMe = ({ templateDetail }: { templateDetail: TemplateType }) => {
   // @ts-ignore
   const myRewrite = (node, index, parent) => {
     if (node.tagName === 'img' && !node.properties.src.startsWith('http')) {
-      node.properties.src = `https://raw.githubusercontent.com/${githubOptions?.organization}/${githubOptions?.repository}/${githubOptions?.branch}/${node.properties.src}`;
+      const imgSrc = node.properties.src.replace(/^\.\/|^\//, '');
+
+      node.properties.src = `https://${githubOptions?.hostname}/${githubOptions?.organization}/${githubOptions?.repository}/${githubOptions?.branch}/${imgSrc}`;
     }
   };
 
   return (
-    <Box flexGrow={1} border={'1px solid #DEE0E2'} mt={'16px'}>
+    <Box flexGrow={1} border={'1px solid #DFE2EA'} mt={'16px'} borderRadius={'8px'}>
       <Box
         p={'16px 0'}
-        borderBottom={'1px solid #DEE0E2'}
+        borderBottom={'1px solid #E8EBF0'}
         color={'#24282C'}
-        fontSize={'18px'}
+        fontSize={'16px'}
         fontWeight={500}
       >
-        <MyIcon name={'markdown'} mr={5} w={'24px'} h={'24px'} ml={'42px'} color={'myGray.500'} />
+        <MyIcon name={'markdown'} mr={'8px'} w={'20px'} ml={'42px'} color={'myGray.500'} />
         README.md
       </Box>
-      <Box p={'24px'} className={`markdown-body ${styles.customMarkDownBody}`}>
+      <Box borderRadius={'8px'} p={'24px'} className={`markdown-body ${styles.customMarkDownBody}`}>
         <ReactMarkdown
           linkTarget={'_blank'}
           rehypePlugins={[rehypeRaw, [rehypeRewrite, { rewrite: myRewrite }]]}

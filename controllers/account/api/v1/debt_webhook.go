@@ -22,8 +22,11 @@ import (
 	"os"
 	"strings"
 
+	"github.com/labring/sealos/controllers/pkg/database/cockroach"
+
 	account2 "github.com/labring/sealos/controllers/pkg/account"
 	"github.com/labring/sealos/controllers/pkg/code"
+	pkgtype "github.com/labring/sealos/controllers/pkg/types"
 	userv1 "github.com/labring/sealos/controllers/user/api/v1"
 
 	admissionv1 "k8s.io/api/admission/v1"
@@ -51,11 +54,12 @@ const (
 
 var logger = logf.Log.WithName("debt-resource")
 
-//+kubebuilder:webhook:path=/validate-v1-sealos-cloud,mutating=false,failurePolicy=ignore,groups="*",resources=*,verbs=create;update;delete,versions=v1,name=debt.sealos.io,admissionReviewVersions=v1,sideEffects=None
+//+kubebuilder:webhook:path=/validate-v1-sealos-cloud,mutating=false,failurePolicy=ignore,groups="*",resources=*,verbs=create;update;delete,versions=v1,name=debt.sealos.io,admissionReviewVersions=v1,sideEffects=None,timeoutSeconds=10
 // +kubebuilder:object:generate=false
 
 type DebtValidate struct {
-	Client client.Client
+	Client    client.Client
+	AccountV2 *cockroach.Cockroach
 }
 
 var kubeSystemGroup string
@@ -63,7 +67,7 @@ var kubeSystemGroup string
 func init() {
 	kubeSystemGroup = fmt.Sprintf("%s:%s", saPrefix, kubeSystemNamespace)
 }
-func (d DebtValidate) Handle(ctx context.Context, req admission.Request) admission.Response {
+func (d *DebtValidate) Handle(ctx context.Context, req admission.Request) admission.Response {
 	logger.V(1).Info("checking user", "userInfo", req.UserInfo, "req.Namespace", req.Namespace, "req.Name", req.Name, "req.gvrk", getGVRK(req), "req.Operation", req.Operation)
 	// skip delete request (删除quota资源除外)
 	if req.Operation == admissionv1.Delete && !strings.Contains(getGVRK(req), "quotas") {
@@ -81,8 +85,11 @@ func (d DebtValidate) Handle(ctx context.Context, req admission.Request) admissi
 			return admission.ValidationResponse(true, "")
 		}
 		// is user sa
-		if !strings.HasPrefix(g, saPrefix+":ns-") {
+		if !strings.HasPrefix(g, saPrefix+":user-system") {
 			continue
+		}
+		if strings.Contains(req.UserInfo.Username, "user-controller-manager") {
+			break
 		}
 		if isWhiteList(req) {
 			return admission.ValidationResponse(true, "")
@@ -99,7 +106,7 @@ func (d DebtValidate) Handle(ctx context.Context, req admission.Request) admissi
 		if req.Kind.Kind == "Payment" && req.Operation == admissionv1.Update {
 			return admission.Denied(fmt.Sprintf("ns %s request %s %s permission denied", req.Namespace, req.Kind.Kind, req.Operation))
 		}
-		return checkOption(ctx, logger, d.Client, req.Namespace)
+		return d.checkOption(ctx, logger, d.Client, req.Namespace)
 	}
 	logger.V(1).Info("pass ", "req.Namespace", req.Namespace)
 	return admission.ValidationResponse(true, "")
@@ -127,11 +134,10 @@ func isWhiteList(req admission.Request) bool {
 			return true
 		}
 	}
-
 	return false
 }
 
-func checkOption(ctx context.Context, logger logr.Logger, c client.Client, nsName string) admission.Response {
+func (d *DebtValidate) checkOption(ctx context.Context, logger logr.Logger, c client.Client, nsName string) admission.Response {
 	if nsName == "" {
 		return admission.Allowed("")
 	}
@@ -145,16 +151,13 @@ func checkOption(ctx context.Context, logger logr.Logger, c client.Client, nsNam
 		return admission.ValidationResponse(false, fmt.Sprintf("this namespace is not user namespace %s,or have not create", ns.Name))
 	}
 	logger.V(1).Info("check user namespace", "ns", ns.Name, "user", user)
-	accountList := AccountList{}
-	if err := c.List(ctx, &accountList, client.MatchingFields{Name: user}); err != nil {
+	account, err := d.AccountV2.GetAccount(&pkgtype.UserQueryOpts{Owner: user})
+	if err != nil {
 		logger.Error(err, "get account error", "user", user)
 		return admission.ValidationResponse(true, err.Error())
 	}
-
-	for _, account := range accountList.Items {
-		if account.Status.Balance < account.Status.DeductionBalance {
-			return admission.ValidationResponse(false, fmt.Sprintf(code.MessageFormat, code.InsufficientBalance, fmt.Sprintf("account balance less than 0,now account is %.2f¥. Please recharge the user %s.", GetAccountDebtBalance(account), user)))
-		}
+	if account.Balance < account.DeductionBalance {
+		return admission.ValidationResponse(false, fmt.Sprintf(code.MessageFormat, code.InsufficientBalance, fmt.Sprintf("account balance less than 0,now account is %.2f¥. Please recharge the user %s.", GetAccountDebtBalance(*account), user)))
 	}
 	return admission.Allowed(fmt.Sprintf("pass user %s , namespace %s", user, ns.Name))
 }
@@ -163,8 +166,8 @@ func isDefaultQuotaName(name string) bool {
 	return strings.HasPrefix(name, "quota-") || name == debtLimit0QuotaName
 }
 
-func GetAccountDebtBalance(account Account) float64 {
-	return account2.GetCurrencyBalance(account.Status.Balance - account.Status.DeductionBalance)
+func GetAccountDebtBalance(account pkgtype.Account) float64 {
+	return account2.GetCurrencyBalance(account.Balance - account.DeductionBalance)
 }
 
 const debtLimit0QuotaName = "debt-limit0"

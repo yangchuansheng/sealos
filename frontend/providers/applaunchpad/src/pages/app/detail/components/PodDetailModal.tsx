@@ -24,8 +24,9 @@ import { useLoading } from '@/hooks/useLoading';
 import MyIcon from '@/components/Icon';
 import { streamFetch } from '@/services/streamFetch';
 import { useToast } from '@/hooks/useToast';
-import MyMenu from '@/components/Menu';
-import MyTooltip from '@/components/MyTooltip';
+import { SealosMenu } from '@sealos/ui';
+
+import { MyTooltip } from '@sealos/ui';
 
 import styles from '../index.module.scss';
 import { useTranslation } from 'next-i18next';
@@ -62,13 +63,13 @@ const Logs = ({
     ({ label, children }: { label: string; children: React.ReactNode }) => {
       return (
         <Flex w={'100%'} my={5} alignItems="center">
-          <Box flex={'0 0 100px'} w={0}>
+          <Box flex={'0 0 100px'} w={0} color={'grayModern.900'}>
             {label}
           </Box>
           <Box
             flex={'1 0 0'}
             w={0}
-            color={'myGray.600'}
+            color={'grayModern.600'}
             userSelect={typeof children === 'string' ? 'all' : 'auto'}
           >
             {children}
@@ -84,14 +85,14 @@ const Logs = ({
         <Box
           py={1}
           px={4}
-          backgroundColor={'myWhite.600'}
+          backgroundColor={'grayModern.100'}
           whiteSpace={'nowrap'}
           overflow={'hidden'}
           textOverflow={'ellipsis'}
-          color={'myGray.600'}
+          color={'grayModern.700'}
           cursor={'default'}
-          border={'1px solid'}
-          borderColor={'myGray.100'}
+          border={theme.borders.base}
+          borderRadius={'md'}
         >
           {children}
         </Box>
@@ -99,7 +100,7 @@ const Logs = ({
     );
   }, []);
 
-  const { isLoading } = useQuery(['init'], () => getPodEvents(pod.podName), {
+  const { isLoading } = useQuery(['initPodEvents'], () => getPodEvents(pod.podName), {
     refetchInterval: 3000,
     onSuccess(res) {
       setEvents(res);
@@ -152,7 +153,7 @@ const Logs = ({
   }, [events, onCloseAnalysesModel, onEndAnalyses, onOpenAnalyses, onStartAnalyses, toast]);
 
   return (
-    <Modal isOpen={true} onClose={closeFn} size={'sm'} isCentered>
+    <Modal isOpen={true} onClose={closeFn} size={'sm'} isCentered lockFocusAcrossFrames={false}>
       <ModalOverlay />
       <ModalContent h={'90vh'} maxW={'90vw'} m={0} display={'flex'} flexDirection={'column'}>
         <ModalCloseButton fontSize={16} top={6} right={6} />
@@ -161,14 +162,14 @@ const Logs = ({
             Pod {t('Details')}
           </Box>
           <Box px={3}>
-            <MyMenu
+            <SealosMenu
               width={240}
               Button={
                 <MenuButton
                   minW={'240px'}
                   h={'32px'}
                   textAlign={'start'}
-                  bg={'myWhite.400'}
+                  bg={'grayModern.100'}
                   border={theme.borders.base}
                   borderRadius={'md'}
                 >
@@ -188,21 +189,17 @@ const Logs = ({
         </Flex>
         <Grid gridTemplateColumns={'1fr 1fr'} gridGap={2} py={2} px={7}>
           <Box>
-            <Box mb={3}>
-              CPU ({((pod.usedCpu[pod.usedCpu.length - 1] / pod.cpu) * 100).toFixed(2)}%)
-            </Box>
+            <Box mb={3}>CPU ({pod.usedCpu.yData[pod.usedCpu.yData.length - 1]}%)</Box>
             <Box h={'80px'} w={'100%'}>
-              <PodLineChart type={'blue'} limit={pod.cpu} data={pod.usedCpu} />
+              <PodLineChart type={'blue'} data={pod.usedCpu} />
             </Box>
           </Box>
           <Box>
             <Box mb={3}>
-              {t('Memory')} (
-              {((pod.usedMemory[pod.usedMemory.length - 1] / pod.memory) * 100).toFixed(2)}
-              %)
+              {t('Memory')} ({pod.usedMemory.yData[pod.usedMemory.yData.length - 1]}%)
             </Box>
             <Box h={'80px'} w={'100%'}>
-              <PodLineChart type={'purple'} limit={pod.memory} data={pod.usedMemory} />
+              <PodLineChart type={'purple'} data={pod.usedMemory} />
             </Box>
           </Box>
         </Grid>
@@ -281,7 +278,7 @@ const Logs = ({
                     borderRadius: '8px',
                     backgroundColor: '#fff',
                     border: '2px solid',
-                    borderColor: event.type === 'Warning' ? '#FF8492' : '#33BABB'
+                    borderColor: event.type === 'Warning' ? '#D92D20' : '#039855'
                   }}
                 >
                   <Flex lineHeight={1} mb={2} alignItems={'center'}>
@@ -307,7 +304,7 @@ const Logs = ({
                 >
                   <MyIcon name="noEvents" w={'48px'} h={'48px'} color={'transparent'} />
                   <Box mt={4} color={'myGray.600'}>
-                    {t('暂无')} Events
+                    {t('No events yet')}
                   </Box>
                 </Flex>
               )}
@@ -317,7 +314,7 @@ const Logs = ({
         </Grid>
       </ModalContent>
       {/* analyses modal */}
-      <Modal isOpen={isOpenAnalyses} onClose={onCloseAnalysesModel}>
+      <Modal isOpen={isOpenAnalyses} onClose={onCloseAnalysesModel} lockFocusAcrossFrames={false}>
         <ModalOverlay />
         <ModalContent maxW={'50vw'} h={'70vh'}>
           <ModalHeader>Pod {t('Intelligent Analysis')}</ModalHeader>

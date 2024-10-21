@@ -25,7 +25,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const kc = K8sApi(kubeconfig);
 
     const kube_user = kc.getCurrentUser();
-
     if (
       !kube_user ||
       !kube_user.name ||
@@ -35,7 +34,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const adminerName = 'adminer-' + kube_user.name;
-    const namespace = GetUserDefaultNameSpace(kube_user.name);
+    const namespace = kc.contexts[0]?.namespace || GetUserDefaultNameSpace(kube_user.name);
 
     let connections: string[] = [];
     try {

@@ -12,8 +12,7 @@ export default async function handler(req: NextApiRequest, resp: NextApiResponse
     if (user === null) {
       return jsonRes(resp, { code: 403, message: 'user null' });
     }
-    // namespace要可切换
-    const namespace = GetUserDefaultNameSpace(user.name);
+    const namespace = kc.contexts[0].namespace || GetUserDefaultNameSpace(user.name);
     const quota = await getUserQuota(kc, namespace);
     return jsonRes(resp, {
       code: 200,
@@ -70,7 +69,6 @@ export const memoryFormatToMi = (memory: string) => {
   } else if (/Ti/gi.test(memory)) {
     value = value * 1024 * 1024;
   } else {
-    console.log('Invalid memory value');
     value = 0;
   }
 

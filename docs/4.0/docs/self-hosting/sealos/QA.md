@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 3
 ---
 
 # Q&A
@@ -88,3 +88,26 @@ Certificates are crucial for the security of your Sealos cluster. Follow these s
 Changing a domain name in a Sealos cluster is complex, often requiring adjustments in multiple components and services. We do not currently provide a comprehensive guide for this process in our documentation. However, future plans include the release of a Sealos Cluster Management Panel for easier domain name and certificate replacement.
 
 It's important to note that domain name changes demand deep knowledge of the cluster's network setup and may involve intricate DNS settings and service discovery. We recommend undertaking such changes only if you have the requisite expertise or with guidance from a professional.
+
+### user registration switch
+
+disabled user register:
+
+```shell
+kubectl get cm -n sealos desktop-frontend-config -o yaml | sed 's/signUpEnabled: true/signUpEnabled: false/g' | kubectl apply -f -
+kubectl rollout restart deployment desktop-frontend -n sealos
+```
+
+enabled user register:
+
+```shell
+kubectl get cm -n sealos desktop-frontend-config -o yaml | sed 's/signUpEnabled: false/signUpEnabled: true/g' | kubectl apply -f -
+kubectl rollout restart deployment desktop-frontend -n sealos
+```
+
+
+## Database Issues
+
+### Dify installation
+
+The Sealos offline package does not include the vector database by default (and the related image is not packaged), so it is currently not possible to install the Dify application in a privately deployed Sealos cluster.

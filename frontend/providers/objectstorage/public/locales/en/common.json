@@ -14,5 +14,17 @@
   "totalSpace": "Total Space",
   "s3ServiceParams": "Access Key",
   "refresh": "Refresh",
-  "deleteWarning": "Delete Warning"
+  "dailyEstimate": "Daily Estimate",
+  "deleteWarning": "Delete Warning",
+  "Current Domain": "Current Domain",
+  "Enable Hosting": "Enable Hosting",
+  "Custom Domain": "Custom Domain",
+  "Disable Hosting": "Disable Hosting",
+  "Effective": "Effective",
+  "name": "Name",
+  "confirm": "Confirm",
+  "reset": "Reset",
+  "cancel": "Cancel",
+  "Unable to Access": "Unable to Access",
+  "reset_error": "Reset Error"
 }

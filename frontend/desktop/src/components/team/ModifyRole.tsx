@@ -1,47 +1,45 @@
+import { modifyRoleRequest } from '@/api/namespace';
+import { useCustomToast } from '@/hooks/useCustomToast';
+import { ApiResp } from '@/types';
+import { ROLE_LIST, UserRole } from '@/types/team';
 import {
   Button,
-  Image,
+  ButtonProps,
+  Menu,
+  MenuButton,
+  MenuItem,
+  MenuList,
   Modal,
   ModalBody,
   ModalCloseButton,
   ModalContent,
   ModalHeader,
   ModalOverlay,
-  useDisclosure,
-  Menu,
-  MenuButton,
-  MenuList,
-  MenuItem,
-  Text,
-  Flex,
   Spinner,
-  ButtonProps
+  Text,
+  useDisclosure
 } from '@chakra-ui/react';
-import { useState } from 'react';
-import { ROLE_LIST, UserRole } from '@/types/team';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { modifyRoleRequest } from '@/api/namespace';
-import { useCustomToast } from '@/hooks/useCustomToast';
-import { ApiResp } from '@/types';
-import { useTranslation } from 'react-i18next';
 import { ExpanMoreIcon } from '@sealos/ui';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'next-i18next';
+import { useState } from 'react';
 export default function ModifyRole({
   ns_uid,
   k8s_username,
   currentRole,
-  userId,
+  userCrUid,
   roles,
   ...props
 }: ButtonProps & {
   ns_uid: string;
-  userId: string;
+  userCrUid: string;
   currentRole: UserRole;
   roles: UserRole[];
   k8s_username: string;
 }) {
   const { onOpen, isOpen, onClose } = useDisclosure();
   const [role, setRole] = useState(currentRole);
-  const { t } = useTranslation();
+  const { t } = useTranslation(['common']);
   const queryClient = useQueryClient();
   const { toast } = useCustomToast({ status: 'error' });
   const mutation = useMutation({
@@ -57,9 +55,8 @@ export default function ModifyRole({
   const submit = () => {
     mutation.mutate({
       ns_uid,
-      tK8s_username: k8s_username,
       tRole: role,
-      tUserId: userId
+      targetUserCrUid: userCrUid
     });
   };
   return (
@@ -85,7 +82,9 @@ export default function ModifyRole({
           p="24px"
         >
           <ModalCloseButton right={'24px'} top="24px" p="0" />
-          <ModalHeader p="0">modify member</ModalHeader>
+          <ModalHeader bg={'white'} border={'none'} p="0">
+            {t('modify_member')}
+          </ModalHeader>
           {mutation.isLoading ? (
             <Spinner mx="auto" />
           ) : (
@@ -138,7 +137,7 @@ export default function ModifyRole({
                   submit();
                 }}
               >
-                {t('Confirm')}
+                {t('common:confirm')}
               </Button>
             </ModalBody>
           )}

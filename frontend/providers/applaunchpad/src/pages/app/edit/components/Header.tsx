@@ -1,13 +1,12 @@
-import React, { useCallback } from 'react';
-import { Box, Flex, Button } from '@chakra-ui/react';
-import { useRouter } from 'next/router';
 import MyIcon from '@/components/Icon';
-import JSZip from 'jszip';
+import { useGlobalStore } from '@/store/global';
 import type { YamlItemType } from '@/types/index';
 import { downLoadBold } from '@/utils/tools';
+import { Box, Button, Flex } from '@chakra-ui/react';
 import dayjs from 'dayjs';
-import { useGlobalStore } from '@/store/global';
 import { useTranslation } from 'next-i18next';
+import { useRouter } from 'next/router';
+import { useCallback } from 'react';
 
 const Header = ({
   appName,
@@ -38,26 +37,28 @@ const Header = ({
 
   return (
     <Flex w={'100%'} px={10} h={'86px'} alignItems={'center'}>
-      <Flex alignItems={'center'} cursor={'pointer'} onClick={() => router.replace(lastRoute)}>
-        <MyIcon name="arrowLeft" />
-        <Box ml={6} fontWeight={'bold'} color={'black'} fontSize={'3xl'}>
+      <Flex
+        alignItems={'center'}
+        cursor={'pointer'}
+        gap={'6px'}
+        onClick={() => router.replace(lastRoute)}
+      >
+        <MyIcon name="arrowLeft" w={'24px'} />
+        <Box fontWeight={'bold'} color={'grayModern.900'} fontSize={'2xl'}>
           {t(title)}
         </Box>
       </Flex>
       <Box flex={1}></Box>
-      <Button
-        h={'40px'}
-        mr={5}
-        px={4}
-        minW={'140px'}
-        bg={'myWhite.600'}
-        borderColor={'myGray.200'}
-        variant={'base'}
-        onClick={handleExportYaml}
-      >
+      <Button h={'40px'} mr={'14px'} minW={'140px'} variant={'outline'} onClick={handleExportYaml}>
         {t('Export')} Yaml
       </Button>
-      <Button px={4} minW={'140px'} h={'40px'} variant={'primary'} onClick={applyCb}>
+      <Button
+        className="driver-deploy-button"
+        minW={'140px'}
+        h={'40px'}
+        onClick={applyCb}
+        _focusVisible={{ boxShadow: '' }}
+      >
         {t(applyBtnText)}
       </Button>
     </Flex>

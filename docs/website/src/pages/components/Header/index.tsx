@@ -3,7 +3,6 @@ import Translate from '@docusaurus/Translate';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import useIsBrowser from '@docusaurus/useIsBrowser';
 import useWindow from '@site/src/hooks/useWindow';
-import NavBanner from '@site/src/components/NavBanner';
 import GithubIcon from '@site/static/icons/github.svg';
 import MeunIcon from '@site/static/icons/meun.svg';
 import LogoIcon from '@site/static/icons/sealos.svg';
@@ -14,13 +13,18 @@ import './index.scss';
 const navbar = [
   {
     key: 'docs',
-    label: <Translate>Documentation</Translate>,
-    to: '/docs/Intro'
+    label: <Translate>Docs</Translate>,
+    to: '/docs/5.0.0/Intro'
   },
   {
-    key: 'community',
-    label: <Translate>Community</Translate>,
-    to: 'https://forum.laf.run/'
+    key: 'appstore',
+    label: <Translate>App Store</Translate>,
+    to: 'https://template.cloud.sealos.io'
+  },
+  {
+    key: 'blog',
+    label: <Translate>Blog</Translate>,
+    to: '/blog'
   },
   {
     key: 'hosting',
@@ -28,9 +32,9 @@ const navbar = [
     to: '/self-hosting '
   },
   {
-    key: 'blog',
-    label: <Translate>Blog</Translate>,
-    to: '/blog'
+    key: 'community',
+    label: <Translate>Community</Translate>,
+    to: 'https://forum.laf.run/'
   },
   {
     key: 'contact',
@@ -41,14 +45,13 @@ const navbar = [
 
 const i18nObj = {
   startNow: <Translate>Start Now</Translate>,
-  cloudOS: <Translate>Cloud Operating System</Translate>
+  cloudOS: <Translate>for all applications</Translate>
 };
 
 const HomeHeader = ({ isPc }: { isPc: boolean }) => {
   const [stars, setStars] = useState(10000);
   const isBrowser = useIsBrowser();
-  const { cloudUrl, bd_vid } = useWindow();
-  const [isBannerVisible, setIsBannerVisible] = useState(false);
+  const { cloudUrl, semParams } = useWindow();
 
   const {
     i18n: { currentLocale, defaultLocale }
@@ -96,16 +99,7 @@ const HomeHeader = ({ isPc }: { isPc: boolean }) => {
           src={require('@site/static/img/bg-header.png').default}
           alt="community"
         />
-        <NavBanner isBannerVisible={isBannerVisible} setIsBannerVisible={setIsBannerVisible} />
-        <nav
-          style={
-            isBannerVisible
-              ? {
-                  marginTop: '48px'
-                }
-              : {}
-          }
-        >
+        <nav>
           <div className="left">
             <MeunIcon width={'24px'} height={'24px'} onClick={() => openSideBar()} />
             <LogoIcon width={'42px'} height={'42px'} />
@@ -120,34 +114,37 @@ const HomeHeader = ({ isPc }: { isPc: boolean }) => {
         </nav>
         <main>
           {currentLocale === 'en' ? (
-            <h1>
-              <span className="txt-title">Kubernetes&nbsp;</span>
-              <span className="txt-aid">as the kernel</span>
-            </h1>
+            <div className="sealos-main-header">
+              <span className="txt-aid">One cloud&nbsp;</span>
+              <span className="txt-title">OS</span>
+            </div>
           ) : (
-            <h1>
-              <span className="txt-aid">以&nbsp;</span>
-              <span className="txt-title">Kubernetes&nbsp;</span>
-              <span className="txt-aid">为内核</span>
-            </h1>
+            <div className="sealos-main-header">
+              <span className="txt-aid">一个</span>
+              <span className="txt-title">云操作系统</span>
+            </div>
           )}
 
-          <h2>{i18nObj.cloudOS}</h2>
+          <h1>{i18nObj.cloudOS}</h1>
 
           {currentLocale === 'en' ? (
             <h3>
-              Abstracting the entire data center as a singular server, where everything is an
-              application. You can use Sealos as seamlessly as operating a&nbsp;
-              <span className="txt-title">personal computer.</span>
+              Sealos is the cloud OS for deploying, managing and scaling your applications&nbsp;
+              <span className="txt-title">in seconds</span>, not minutes, not hours.&nbsp;
+              <span className="txt-title">Use Sealos as easily as your own PC!</span>
             </h3>
           ) : (
             <h3>
-              整个数据中心抽象成一台服务器，一切皆应用，像使用
-              <span className="txt-title">个人电脑</span>
-              一样使用 Sealos！
+              Sealos 是一个无需云计算专业知识，就能在
+              <span className="txt-title">几秒钟内</span>
+              部署、管理和扩展应用的云操作系统。就像使用个人电脑一样！
             </h3>
           )}
-          <a className="start-now-button" href={`${cloudUrl}?bd_vid=${bd_vid}`} target="_blank">
+          <a
+            className="start-now-button"
+            href={`${cloudUrl}?bd_vid=${semParams.bd_vid}&k=${semParams.keywords}&s=${semParams.s}`}
+            target="_blank"
+          >
             {i18nObj.startNow}
             <div className="start-now-button-wrap"></div>
           </a>
@@ -165,16 +162,7 @@ const HomeHeader = ({ isPc }: { isPc: boolean }) => {
         src={require('@site/static/img/bg-header.png').default}
         alt="community"
       />
-      <NavBanner isBannerVisible={isBannerVisible} setIsBannerVisible={setIsBannerVisible} />
-      <nav
-        style={
-          isBannerVisible
-            ? {
-                marginTop: '48px'
-              }
-            : {}
-        }
-      >
+      <nav>
         <div className="left">
           <div
             className="sealos_home_header_title"
@@ -211,7 +199,11 @@ const HomeHeader = ({ isPc }: { isPc: boolean }) => {
               {i18nMap[currentLocale].label}
             </div>
           )}
-          <a className="start-now-button" href={`${cloudUrl}?bd_vid=${bd_vid}`} target="_blank">
+          <a
+            className="start-now-button"
+            href={`${cloudUrl}?bd_vid=${semParams.bd_vid}&k=${semParams.keywords}&s=${semParams.s}`}
+            target="_blank"
+          >
             {i18nObj.startNow}
             <div className="start-now-button-wrap"></div>
           </a>
@@ -219,35 +211,34 @@ const HomeHeader = ({ isPc }: { isPc: boolean }) => {
       </nav>
       <main>
         {currentLocale === 'en' ? (
-          <h1>
-            <span className="txt-title">Kubernetes&nbsp;</span>
-            <span className="txt-aid">as the kernel</span>
-          </h1>
+          <div className="sealos-main-header">
+            <span className="txt-aid">One cloud&nbsp;</span>
+            <span className="txt-title">OS</span>
+          </div>
         ) : (
-          <h1>
-            <span className="txt-aid">以&nbsp;</span>
-            <span className="txt-title">Kubernetes&nbsp;</span>
-            <span className="txt-aid">为内核</span>
-          </h1>
+          <div className="sealos-main-header">
+            <span className="txt-aid">一个</span>
+            <span className="txt-title">云操作系统</span>
+          </div>
         )}
 
-        <h2>{i18nObj.cloudOS}</h2>
+        <h1>{i18nObj.cloudOS}</h1>
 
         {currentLocale === 'en' ? (
           <h3>
-            Abstracting the entire data center as a singular server, where everything is an
-            application. You can use Sealos as seamlessly as operating a&nbsp;
-            <span className="txt-title">personal computer.</span>
+            Sealos is the cloud OS for deploying, managing and scaling your applications&nbsp;
+            <span className="txt-title">in seconds</span>, not minutes, not hours.&nbsp;
+            <span className="txt-title">Use Sealos as easily as your own PC!</span>
           </h3>
         ) : (
           <h3>
-            整个数据中心抽象成一台服务器，一切皆应用，像使用
-            <span className="txt-title">个人电脑</span>
-            一样使用 Sealos！
+            Sealos 是一个无需云计算专业知识，就能在
+            <span className="txt-title">几秒钟内</span>
+            部署、管理和扩展应用的云操作系统。就像使用个人电脑一样！
           </h3>
         )}
 
-        <VideoPlayer url={'https://itceb8-video.oss.laf.run/sealos-website.mp4'}></VideoPlayer>
+        <VideoPlayer url={'https://oss.laf.run/itceb8-video/sealos-web.mp4'}></VideoPlayer>
       </main>
     </div>
   );

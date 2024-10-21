@@ -1,6 +1,6 @@
-import { getPlatformEnv } from '@/api/platform';
 import { theme } from '@/constants/theme';
 import { useConfirm } from '@/hooks/useConfirm';
+import useEnvStore from '@/store/env';
 import { useGlobalStore } from '@/store/global';
 import '@/styles/reset.scss';
 import { getLangStore, setLangStore } from '@/utils/cookieUtils';
@@ -11,7 +11,7 @@ import { appWithTranslation, useTranslation } from 'next-i18next';
 import type { AppProps } from 'next/app';
 import Head from 'next/head';
 import Router, { useRouter } from 'next/router';
-import NProgress from 'nprogress'; //nprogress module
+import NProgress from 'nprogress';
 import 'nprogress/nprogress.css';
 import { useEffect, useState } from 'react';
 import 'react-day-picker/dist/style.css';
@@ -36,6 +36,7 @@ const queryClient = new QueryClient({
 
 function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
+  const { SystemEnv, initSystemEnv } = useEnvStore();
   const { i18n } = useTranslation();
   const { setScreenWidth, loading, setLastRoute, lastRoute } = useGlobalStore();
   const [refresh, setRefresh] = useState(false);
@@ -48,19 +49,18 @@ function App({ Component, pageProps }: AppProps) {
   useEffect(() => {
     NProgress.start();
     const response = createSealosApp();
-
     (async () => {
+      const SystemEnv = await initSystemEnv();
       try {
         const res = await sealosApp.getSession();
         localStorage.setItem('session', JSON.stringify(res));
         console.log('app init success');
       } catch (err) {
         console.log('App is not running in desktop');
-        const envs = await getPlatformEnv();
         if (!process.env.NEXT_PUBLIC_MOCK_USER) {
           localStorage.removeItem('session');
           openConfirm(() => {
-            window.open(`https://${envs.domain}`, '_self');
+            window.open(`https://${SystemEnv.domain}`, '_self');
           })();
         }
       }
@@ -125,36 +125,35 @@ function App({ Component, pageProps }: AppProps) {
     i18n?.changeLanguage?.(lang);
   }, [refresh, router.asPath]);
 
-  // InternalAppCall
-  const setupInternalAppCallListener = async () => {
-    try {
-      const envs = await getPlatformEnv();
-      const event = async (e: MessageEvent) => {
-        const whitelist = [`https://${envs?.domain}`];
-        if (!whitelist.includes(e.origin)) {
-          return;
-        }
-        try {
-          if (e.data?.type === 'InternalAppCall' && e.data?.name) {
-            router.push({
-              pathname: '/app/detail',
-              query: {
-                name: e.data.name
-              }
-            });
-          }
-        } catch (error) {
-          console.log(error, 'error');
-        }
-      };
-      window.addEventListener('message', event);
-      return () => window.removeEventListener('message', event);
-    } catch (error) {}
-  };
   useEffect(() => {
+    // InternalAppCall
+    const setupInternalAppCallListener = async () => {
+      try {
+        const event = async (e: MessageEvent) => {
+          const whitelist = [`https://${SystemEnv.domain}`];
+          if (!whitelist.includes(e.origin)) {
+            return;
+          }
+          try {
+            if (e.data?.type === 'InternalAppCall' && e.data?.name) {
+              router.push({
+                pathname: '/job/detail',
+                query: {
+                  name: e.data.name
+                }
+              });
+            }
+          } catch (error) {
+            console.log(error, 'error');
+          }
+        };
+        window.addEventListener('message', event);
+        return () => window.removeEventListener('message', event);
+      } catch (error) {}
+    };
+
     setupInternalAppCallListener();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [SystemEnv.domain, router]);
 
   return (
     <>

@@ -1,19 +1,9 @@
-import {
-  Flex,
-  Input,
-  Popover,
-  PopoverTrigger,
-  Img,
-  PopoverContent,
-  Button,
-  Box,
-  useTheme
-} from '@chakra-ui/react';
-import { format, parse, isValid, isAfter, isBefore } from 'date-fns';
-import { useState, ChangeEventHandler, useEffect, useMemo } from 'react';
-import { DateRange, SelectRangeEventHandler, DayPicker } from 'react-day-picker';
-import { useQueryClient } from '@tanstack/react-query';
 import { CalendarIcon } from '@chakra-ui/icons';
+import { Box, Button, Popover, PopoverContent, PopoverTrigger, useTheme } from '@chakra-ui/react';
+import { format } from 'date-fns';
+import { useState } from 'react';
+import { DateRange, DayPicker } from 'react-day-picker';
+import 'react-day-picker/dist/style.css';
 
 export default function RangeDate({
   isDisabled = false,
@@ -46,7 +36,7 @@ export default function RangeDate({
           <Box flex={1} textAlign={'center'}>
             {format(selectedRange.to || new Date(), 'y-MM-dd')}
           </Box>
-          <CalendarIcon pr={2} fontSize={'22px'} color={'myGray.600'} />
+          <CalendarIcon pr={2} fontSize={'22px'} color={'grayModern.600'} />
         </Button>
       </PopoverTrigger>
       <PopoverContent w={'100%'}>

@@ -1,21 +1,30 @@
 import { connectToDatabase } from './mongodb';
+import { subMinutes } from 'date-fns';
 
 type TVerification_Codes = {
   phone: string;
   code: string;
-  createdTime: number;
+  ip: string;
+  createdTime: Date;
 };
 
 async function connectToUserCollection() {
   const client = await connectToDatabase();
   const collection = client.db().collection<TVerification_Codes>('verification_codes');
-  // console.log('connect to verification_codes collection')
   await collection.createIndex({ createdTime: 1 }, { expireAfterSeconds: 60 * 5 });
   return collection;
 }
 
 // addOrUpdateCode
-export async function addOrUpdateCode({ phone, code }: { phone: string; code: string }) {
+export async function addOrUpdateCode({
+  phone,
+  code,
+  ip
+}: {
+  phone: string;
+  code: string;
+  ip: string;
+}) {
   const codes = await connectToUserCollection();
   const result = await codes.updateOne(
     {
@@ -24,7 +33,9 @@ export async function addOrUpdateCode({ phone, code }: { phone: string; code: st
     {
       $set: {
         code,
-        createdTime: new Date().getTime()
+        phone,
+        ip,
+        createdTime: new Date()
       }
     },
     {
@@ -33,19 +44,27 @@ export async function addOrUpdateCode({ phone, code }: { phone: string; code: st
   );
   return result;
 }
+
 // checkCode
-export async function checkSendable({ phone }: { phone: string }) {
+export async function checkSendable({ phone, ip }: { phone?: string; ip: string }) {
   const codes = await connectToUserCollection();
   const result = await codes.findOne({
-    phone,
+    $or: [
+      {
+        ip
+      },
+      {
+        phone
+      }
+    ],
     createdTime: {
-      // 在区间范围内找到就是已经发送过了，不能再发了
-      $gt: new Date().getTime() - 60 * 1000,
-      $lt: new Date().getTime()
+      $gt: subMinutes(new Date(), 1),
+      $lt: new Date()
     }
   });
   return !result;
 }
+
 // checkCode
 export async function checkCode({ phone, code }: { phone: string; code: string }) {
   const codes = await connectToUserCollection();
@@ -53,8 +72,7 @@ export async function checkCode({ phone, code }: { phone: string; code: string }
     phone,
     code,
     createdTime: {
-      // 5分钟内有效
-      $gt: new Date().getTime() - 5 * 60 * 1000
+      $gt: subMinutes(new Date(), 5)
     }
   });
   return !!result;

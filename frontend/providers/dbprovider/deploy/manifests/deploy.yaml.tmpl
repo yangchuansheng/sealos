@@ -40,10 +40,14 @@ spec:
           env:
             - name: SEALOS_DOMAIN
               value: {{ .cloudDomain }}
+            - name: DESKTOP_DOMAIN
+              value: {{ .cloudDomain }}
             - name: SEALOS_PORT
               value: "{{ if .cloudPort }}:{{ .cloudPort }}{{ end }}"
             - name: MONITOR_URL
               value: {{ .monitorUrl }}
+            - name: MINIO_URL
+              value: {{ .minioUrl }}
             - name: MINIO_ACCESS_KEY
               value: {{ .minioAccessKey }}
             - name: MINIO_SECRET_KEY
@@ -51,9 +55,17 @@ spec:
             - name: MIGRATE_FILE_IMAGE
               value: {{ .migrateFileImage }}
             - name: MINIO_PORT
-              value: {{ .minioPort }}
+              value: '{{ .minioPort }}'
             - name: MINIO_BUCKET_NAME
               value: {{ .minioBucketName }}
+            - name: BACKUP_ENABLED
+              value: "false"
+            - name: SHOW_DOCUMENT
+              value: "true"
+            - name: GUIDE_ENABLED
+              value: "{{ .guideEnabled }}"
+            - name: BILLING_URL
+              value: {{ .billingUrl }}
           securityContext:
             runAsNonRoot: true
             runAsUser: 1001
@@ -63,8 +75,8 @@ spec:
                 - 'ALL'
           resources:
             limits:
-              cpu: 1000m
-              memory: 1024Mi
+              cpu: 2000m
+              memory: 2048Mi
             requests:
               cpu: 10m
               memory: 128Mi
@@ -75,6 +87,18 @@ spec:
             - name: dbprovider-frontend-volume
               mountPath: /config.yaml
               subPath: config.yaml
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: "app"
+                  operator: In
+                  values:
+                  - dbprovider-frontend
+              topologyKey: "kubernetes.io/hostname"
       volumes:
         - name: dbprovider-frontend-volume
           configMap:

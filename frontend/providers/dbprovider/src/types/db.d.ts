@@ -12,14 +12,17 @@ import type {
   V1StatefulSet,
   V1ContainerStatus
 } from '@kubernetes/client-node';
+import { I18nCommonKey } from './i18next';
 
 export type DBType = `${DBTypeEnum}`;
 
 export type SupportMigrationDBType = Extract<DBType, 'postgresql' | 'mongodb' | 'apecloud-mysql'>;
 
-export type SupportConnectDBType = Extract<
+export type SupportConnectDBType = Extract<DBType, 'postgresql' | 'mongodb' | 'apecloud-mysql'>;
+
+export type SupportReconfigureDBType = Extract<
   DBType,
-  'postgresql' | 'mongodb' | 'apecloud-mysql' | 'mongodb'
+  'postgresql' | 'mongodb' | 'apecloud-mysql' | 'redis'
 >;
 
 export type DeployKindsType =
@@ -51,6 +54,9 @@ export interface DBListItemType {
   memory: number;
   storage: string;
   conditions: DBConditionItemType[];
+  isDiskSpaceOverflow: boolean;
+  labels: { [key: string]: string };
+  source: DBSource;
 }
 
 export interface DBEditType {
@@ -63,11 +69,22 @@ export interface DBEditType {
   storage: number;
 }
 
+export type DBSourceType = 'app_store' | 'sealaf';
+
+export type DBSource = {
+  hasSource: boolean;
+  sourceName: string;
+  sourceType: DBSourceType;
+};
+
 export interface DBDetailType extends DBEditType {
   id: string;
   createTime: string;
   status: DBStatusMapType;
   conditions: DBConditionItemType[];
+  isDiskSpaceOverflow: boolean;
+  labels: { [key: string]: string };
+  source: DBSource;
 }
 
 export interface DBConditionItemType {
@@ -114,4 +131,21 @@ export interface BackupItemType {
   startTime: Date;
   failureReason?: string;
   type: `${BackupTypeEnum}`;
+  namespace: string;
+  connectionPassword: string;
+}
+
+export type ReconfigStatusMapType = {
+  label: I18nCommonKey;
+  value: ReconfigStatus;
+  color: string;
+};
+
+export interface OpsRequestItemType {
+  id: string;
+  name: string;
+  status: ReconfigStatusMapType;
+  startTime: Date;
+  namespace: string;
+  configurations: { parameterName: string; newValue: string; oldValue?: string }[];
 }

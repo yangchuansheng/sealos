@@ -3,62 +3,70 @@ import { ObjectId } from 'mongodb';
 export enum ClusterType {
   Standard = 'Standard',
   Enterprise = 'Enterprise',
+  ScaledStandard = 'ScaledStandard',
   Contact = 'Contact'
 }
 
 export type ClusterDB = {
-  _id?: ObjectId; // cluster ID 唯一
-  clusterId: string; // cluster ID 唯一
-  uid: string; // user ID 唯一
-  orderID?: string; // order ID 唯一
+  _id?: ObjectId; // cluster ID
+  clusterId: string; // cluster ID
+  uid: string; // user ID
+  orderID?: string; // order ID
+  type: ClusterType;
+  createdAt: Date;
+  updatedAt: Date;
   licenseID?: ObjectId; // license ID
-  // amount: number;
-  type: ClusterType; // license type
-  // ossUrl?: {
-  //   tar: string;
-  //   md5: string;
-  // creationTime: Date;
-  // expirationTime: Date;
-  // };
-  createdAt: Date; // Creation timestamp
-  updatedAt: Date; // Modification timestamp
+  // v1 new
+  displayName?: string;
+  kubeSystemID?: string; // bind kube-system id
+  kubeSystemUpdateAt?: Date;
+  isDeleted?: boolean;
+  // v1.1
+  cpu: number;
+  memory: number;
+  months: string;
 };
 
 export type ClusterRecordPayload = {
   uid: string; // user ID
   orderID?: string; // order ID
-  licenseID?: ObjectId; // license ID
-  // amount: number;
-  // tar: string;
-  // md5: string;
-  type: ClusterType; // license type
-};
+  type: ClusterType; // cluster type
+} & ClusterFormType;
 
 export type CreateClusterParams = {
-  orderID: string; // order ID
+  orderID?: string; // order ID
   type: ClusterType; // license type
-};
-
-export type ClusterResult = {
-  clusterId: string; // cluster ID 唯一
-  uid: string; // user ID 唯一
-  orderID?: string; // order ID 唯一
-  licenseID?: ObjectId; // license ID
-  type: ClusterType; // license type
-};
+} & ClusterFormType;
 
 export type CommandFormType = {
   cloudVersion: string;
+  useImageRegistry: boolean;
   imageRegistry: string;
+  useProxyPrefix: boolean;
   proxyPrefix: string;
-  masterIP: string[];
-  nodeIP: string[];
-  sshPath: string;
-  sshPassword: string;
+  masterIP: {
+    ip: string;
+  }[];
+  nodeIP: { ip: string }[];
+  ssh: {
+    useKey: boolean;
+    path: string;
+    password: string;
+  };
+  k8sVersion: string;
   podSubnet: string;
   serviceSubnet: string;
   cloudDomain: string;
   cloudPort: string;
+  selfSigned: boolean;
   certPath: string;
   certKeyPath: string;
+};
+
+export type ClusterFormType = {
+  cpu: number;
+  memory: number;
+  months: string;
+  name?: string;
+  systemId?: string;
 };

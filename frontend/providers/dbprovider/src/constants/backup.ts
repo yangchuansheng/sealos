@@ -1,27 +1,40 @@
 import { BackupStatusMapType } from '@/types/db';
+import { I18nCommonKey } from '@/types/i18next';
 
 export enum BackupStatusEnum {
   Completed = 'Completed',
   InProgress = 'InProgress',
-  'Failed' = 'Failed',
-  'UnKnow' = 'UnKnow'
+  Failed = 'Failed',
+  UnKnow = 'UnKnow',
+  Running = 'Running',
+  Deleting = 'Deleting'
 }
 
 export const backupStatusMap: Record<`${BackupStatusEnum}`, BackupStatusMapType> = {
   [BackupStatusEnum.Completed]: {
-    label: 'Backup Completed',
+    label: 'backup_completed',
     value: BackupStatusEnum.Completed,
-    color: '#13B2A9'
+    color: '#039855'
   },
   [BackupStatusEnum.InProgress]: {
-    label: 'Backup Processing',
+    label: 'backup_processing',
     value: BackupStatusEnum.InProgress,
-    color: '#CE9629'
+    color: '#667085'
   },
   [BackupStatusEnum.Failed]: {
-    label: 'Backup Failed',
+    label: 'backup_failed',
     value: BackupStatusEnum.Failed,
-    color: '#FF5B6E'
+    color: '#F04438'
+  },
+  [BackupStatusEnum.Running]: {
+    label: 'backup_running',
+    value: BackupStatusEnum.Running,
+    color: '#667085'
+  },
+  [BackupStatusEnum.Deleting]: {
+    label: 'backup_deleting',
+    value: BackupStatusEnum.Deleting,
+    color: '#DC6803'
   },
   [BackupStatusEnum.UnKnow]: {
     label: 'UnKnow',
@@ -33,6 +46,7 @@ export const backupStatusMap: Record<`${BackupStatusEnum}`, BackupStatusMapType>
 export const BACKUP_TYPE_LABEL_KEY = 'backup-type';
 export const BACKUP_REMARK_LABEL_KEY = 'backup-remark';
 export const BACKUP_LABEL_KEY = 'kubeblocks.io/restore-from-backup';
+export const BACKUP_REPO_DEFAULT_KEY = 'dataprotection.kubeblocks.io/is-default-repo';
 
 export enum BackupTypeEnum {
   manual = 'manual',
@@ -40,7 +54,7 @@ export enum BackupTypeEnum {
   'UnKnow' = 'UnKnow'
 }
 
-export const backupTypeMap: Record<`${BackupTypeEnum}`, { label: string }> = {
+export const backupTypeMap: Record<`${BackupTypeEnum}`, { label: I18nCommonKey }> = {
   [BackupTypeEnum.manual]: {
     label: 'Manual'
   },

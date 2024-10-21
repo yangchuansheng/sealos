@@ -1,36 +1,47 @@
-import { NextApiRequest, NextApiResponse } from 'next';
-// import twilio from 'twilio';
-//@ts-ignore
-import Dysmsapi, * as dysmsapi from '@alicloud/dysmsapi20170525';
-//@ts-ignore
-import * as OpenApi from '@alicloud/openapi-client';
-//@ts-ignore
-import * as Util from '@alicloud/tea-util';
-import { jsonRes } from '@/service/backend/response';
 import { addOrUpdateCode, checkSendable } from '@/service/backend/db/verifyCode';
-import { retrySerially } from '@/utils/tools';
-import { authSession } from '@/service/backend/auth';
-import { enableInvoice } from '@/service/enabled';
-const accessKeyId = process.env.ALI_ACCESS_KEY_ID;
-const accessKeySecret = process.env.ALI_ACCESS_KEY_SECRET;
-const templateCode = process.env.ALI_TEMPLATE_CODE;
-const signName = process.env.ALI_SIGN_NAME;
-
+import { jsonRes } from '@/service/backend/response';
+import { getClientIPFromRequest, retrySerially } from '@/utils/tools';
+import Dysmsapi, * as dysmsapi from '@alicloud/dysmsapi20170525';
+import * as OpenApi from '@alicloud/openapi-client';
+import * as Util from '@alicloud/tea-util';
+import { NextApiRequest, NextApiResponse } from 'next';
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const accessKeyId = global.AppConfig.costCenter.invoice.aliSms.accessKeyID;
+  const accessKeySecret = global.AppConfig.costCenter.invoice.aliSms.accessKeySecret;
+  const templateCode = global.AppConfig.costCenter.invoice.aliSms.templateCode;
+  const signName = global.AppConfig.costCenter.invoice.aliSms.signName;
   try {
-    if (!enableInvoice()) {
+    if (!global.AppConfig.costCenter.invoice.enabled) {
       throw new Error('invoice is not enabled');
     }
-    const kc = await authSession(req.headers);
-    const user = kc.getCurrentUser();
-    if (user === null) {
-      return jsonRes(res, { code: 401, message: 'user null' });
+    if (process.env.NODE_ENV === 'development') {
+      return jsonRes(res, {
+        message: 'successfully',
+        code: 200
+      });
     }
     const { phoneNumbers } = req.body;
-    if (!(await checkSendable(phoneNumbers))) {
+    let ip = getClientIPFromRequest(req);
+
+    if (!ip) {
+      // if (process.env.NODE_ENV === 'development') {
+      // 	// ip = '127.0.0.1';
+      // }
+      // else
       return jsonRes(res, {
-        message: 'code already sent',
-        code: 400
+        message: 'The IP is null',
+        code: 403
+      });
+    }
+    if (
+      !(await checkSendable({
+        phone: phoneNumbers,
+        ip
+      }))
+    ) {
+      return jsonRes(res, {
+        message: 'Code already sent',
+        code: 429
       });
     }
 
@@ -76,7 +87,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }, 3);
 
     // update cache
-    await addOrUpdateCode({ phone: phoneNumbers, code });
+    await addOrUpdateCode({ phone: phoneNumbers, code, ip });
     return jsonRes(res, {
       message: 'successfully',
       code: 200

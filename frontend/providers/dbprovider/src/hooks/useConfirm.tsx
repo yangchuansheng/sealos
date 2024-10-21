@@ -10,15 +10,16 @@ import {
   Button
 } from '@chakra-ui/react';
 import { useTranslation } from 'next-i18next';
+import { I18nCommonKey } from '@/types/i18next';
 
 export const useConfirm = ({
-  title = 'Prompt',
+  title = 'prompt',
   content,
-  confirmText = 'Confirm'
+  confirmText = 'confirm'
 }: {
-  title?: string;
-  content: string;
-  confirmText?: string;
+  title?: I18nCommonKey;
+  content: I18nCommonKey;
+  confirmText?: I18nCommonKey;
 }) => {
   const { isOpen, onOpen, onClose } = useDisclosure();
   const { t } = useTranslation();
@@ -46,11 +47,11 @@ export const useConfirm = ({
                 {t(title)}
               </AlertDialogHeader>
 
-              <AlertDialogBody>{content}</AlertDialogBody>
+              <AlertDialogBody>{t(content)}</AlertDialogBody>
 
               <AlertDialogFooter>
                 <Button
-                  colorScheme={'gray'}
+                  variant={'outline'}
                   onClick={() => {
                     onClose();
                     typeof cancelCb.current === 'function' && cancelCb.current();
@@ -60,7 +61,7 @@ export const useConfirm = ({
                 </Button>
                 <Button
                   ml={3}
-                  variant={'primary'}
+                  variant={'solid'}
                   onClick={() => {
                     onClose();
                     typeof confirmCb.current === 'function' && confirmCb.current();

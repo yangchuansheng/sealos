@@ -3,7 +3,7 @@ import { base64Decode } from '@/utils/tools';
 import { sign } from 'jsonwebtoken';
 import { connectToDatabase } from './mongodb';
 
-const ExpiredTime = 30 * 24 * 60 * 60;
+export const ExpiredTime = 30 * 24 * 60 * 60;
 
 async function connectLicenseCollection() {
   const client = await connectToDatabase();
@@ -18,7 +18,12 @@ export async function createLicenseRecord({
   orderID,
   quota,
   payMethod,
-  type
+  type,
+  clusterId,
+  cpu,
+  memory,
+  months,
+  expiredTime = ExpiredTime
 }: LicenseRecordPayload) {
   const collection = await connectLicenseCollection();
 
@@ -33,11 +38,15 @@ export async function createLicenseRecord({
       quota: quota
     },
     iat: now, // Store the current timestamp as iat
-    exp: now + ExpiredTime, // Set expiration to one day from now (in seconds)
+    exp: now + expiredTime, // Set expiration to one day from now (in seconds)
     amount: amount,
     type: type,
     createdAt: new Date(),
-    updatedAt: new Date()
+    updatedAt: new Date(),
+    clusterId: clusterId,
+    cpu,
+    memory,
+    months
   };
 
   const result = await collection.insertOne(record);
@@ -97,7 +106,7 @@ export async function getLicenseRecordsByUid({
   return result;
 }
 
-export function generateLicenseToken(payload: LicenseToken, time = ExpiredTime) {
+export function generateLicenseToken(payload: LicenseToken, time: number) {
   const privateKey = process.env.LICENSE_PRIVATE_KEY;
   if (!privateKey) {
     throw new Error('LICENSE PRIVATE KEY IS MISSING');
@@ -109,7 +118,22 @@ export function generateLicenseToken(payload: LicenseToken, time = ExpiredTime) 
     iss: 'Sealos',
     iat: nowInSeconds,
     exp: expirationTime,
-    ...payload
+    type: payload.type,
+    clusterID: payload.clusterID,
+    data: {
+      totalCPU:
+        typeof payload.data.totalCPU === 'number'
+          ? payload.data.totalCPU
+          : parseInt(payload.data.totalCPU),
+      totalMemory:
+        typeof payload.data.totalMemory === 'number'
+          ? payload.data.totalMemory
+          : parseInt(payload.data.totalMemory),
+      nodeCount:
+        typeof payload.data.nodeCount === 'number'
+          ? payload.data.nodeCount
+          : parseInt(payload.data.nodeCount)
+    }
   };
 
   const token = sign(_payload, base64Decode(privateKey), { algorithm: 'RS256' });
@@ -129,4 +153,47 @@ export async function hasIssuedLicense({ uid, orderID }: { uid: string; orderID:
   } catch (error) {
     throw new Error('Error checking for issued license:');
   }
+}
+
+export async function getLicenseRecordsByUidAndClusterId({
+  uid,
+  clusterId,
+  page,
+  pageSize
+}: {
+  uid: string;
+  clusterId: string;
+  page: number;
+  pageSize: number;
+}) {
+  const collection = await connectLicenseCollection();
+  const skip = (page - 1) * pageSize;
+  const query = { uid: uid, clusterId: clusterId };
+  const options = {
+    skip: skip,
+    limit: pageSize
+  };
+  const records = await collection.find(query, options).sort({ iat: -1 }).toArray();
+  const totalCount = await collection.countDocuments(query);
+  const result = {
+    records: records,
+    total: totalCount
+  };
+  return result;
+}
+
+export async function hasHistoricalLicense(uid: string) {
+  const collection = await connectLicenseCollection();
+  const query = { uid: uid, clusterId: { $exists: false } };
+  const latestRecord = await collection.findOne(query, { sort: { iat: -1 } });
+
+  if (latestRecord) {
+    const currentTimestamp = Math.floor(new Date().getTime() / 1000);
+    const expTimestamp = latestRecord.exp;
+    const isExpired = expTimestamp && expTimestamp < currentTimestamp;
+
+    return !isExpired;
+  }
+
+  return false;
 }

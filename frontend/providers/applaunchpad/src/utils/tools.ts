@@ -9,6 +9,20 @@ import { YamlKindEnum } from './adapt';
 import { useTranslation } from 'next-i18next';
 import * as jsonpatch from 'fast-json-patch';
 
+export function formatSize(size: number, fixedNumber = 2) {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+  let i = 0;
+  while (size >= 1024) {
+    size /= 1024;
+    i++;
+  }
+  return size.toFixed(fixedNumber) + ' ' + units[i];
+}
+
+export const formatTime = (time: string | number | Date, format = 'YYYY-MM-DD HH:mm:ss') => {
+  return dayjs(time).format(format);
+};
+
 /**
  * copy text data
  */
@@ -55,7 +69,11 @@ export const pathFormat = (str: string) => {
   return `./${str}`;
 };
 export const pathToNameFormat = (str: string) => {
-  return str.replace(/(\/|\.)/g, 'vn-').toLocaleLowerCase();
+  const endsWithSlash = str.endsWith('/');
+  const withoutTrailingSlash = endsWithSlash ? str.slice(0, -1) : str;
+  const replacedStr = withoutTrailingSlash.replace(/_/g, '-').replace(/[\/.]/g, 'vn-');
+
+  return endsWithSlash ? replacedStr : replacedStr.toLowerCase();
 };
 
 /**
@@ -221,18 +239,21 @@ export function downLoadBold(content: BlobPart, type: string, fileName: string) 
  * patch yamlList and get action
  */
 export const patchYamlList = ({
-  formOldYamlList,
-  newYamlList,
-  crYamlList
+  parsedOldYamlList,
+  parsedNewYamlList,
+  originalYamlList
 }: {
-  formOldYamlList: string[];
-  newYamlList: string[];
-  crYamlList: DeployKindsType[];
+  parsedOldYamlList: string[];
+  parsedNewYamlList: string[];
+  originalYamlList: DeployKindsType[];
 }) => {
-  const oldFormJsonList = formOldYamlList
+  const oldFormJsonList = parsedOldYamlList
     .map((item) => yaml.loadAll(item))
     .flat() as DeployKindsType[];
-  const newFormJsonList = newYamlList.map((item) => yaml.loadAll(item)).flat() as DeployKindsType[];
+
+  const newFormJsonList = parsedNewYamlList
+    .map((item) => yaml.loadAll(item))
+    .flat() as DeployKindsType[];
 
   const actions: AppPatchPropsType = [];
 
@@ -249,6 +270,7 @@ export const patchYamlList = ({
       });
     }
   });
+
   // find create and patch
   newFormJsonList.forEach((newYamlJson) => {
     const oldFormJson = oldFormJsonList.find(
@@ -265,7 +287,7 @@ export const patchYamlList = ({
       const actionsJson = (() => {
         try {
           /* find cr json */
-          let crOldYamlJson = crYamlList.find(
+          let crOldYamlJson = originalYamlList.find(
             (item) =>
               item.kind === oldFormJson?.kind &&
               item?.metadata?.name === oldFormJson?.metadata?.name
@@ -292,7 +314,27 @@ export const patchYamlList = ({
           }
 
           /* generate new json */
-          const patchResYamlJson = jsonpatch.applyPatch(crOldYamlJson, patchRes, true).newDocument;
+          const _patchRes: jsonpatch.Operation[] = patchRes
+            .map((item) => {
+              let jsonPatchError = jsonpatch.validate([item], crOldYamlJson);
+              if (jsonPatchError?.name === 'OPERATION_PATH_UNRESOLVABLE') {
+                switch (item.op) {
+                  case 'add':
+                  case 'replace':
+                    return {
+                      ...item,
+                      op: 'add' as const,
+                      value: item.value ?? ''
+                    };
+                  default:
+                    return null;
+                }
+              }
+              return item;
+            })
+            .filter((op): op is jsonpatch.Operation => op !== null);
+
+          const patchResYamlJson = jsonpatch.applyPatch(crOldYamlJson, _patchRes, true).newDocument;
 
           // delete invalid field
           // @ts-ignore
@@ -308,8 +350,7 @@ export const patchYamlList = ({
 
           return patchResYamlJson;
         } catch (error) {
-          console.log(error);
-
+          console.error('ACTIONS JSON ERROR:\n', error);
           return newYamlJson;
         }
       })();
@@ -337,6 +378,8 @@ export const patchYamlList = ({
           actionsJson.spec.ports[0].name = 'adaptport';
         }
       }
+
+      console.log('patch result:', oldFormJson.metadata?.name, oldFormJson.kind, actionsJson);
 
       actions.push({
         type: 'patch',
@@ -412,4 +455,24 @@ export const getErrText = (err: any, def = '') => {
   const msg: string = typeof err === 'string' ? err : err?.message || def || '';
   msg && console.log('error =>', msg);
   return msg;
+};
+
+export const formatMoney = (mone: number) => {
+  return mone / 1000000;
+};
+
+// convertBytes 1024
+export const convertBytes = (bytes: number, unit: 'kb' | 'mb' | 'gb' | 'tb') => {
+  switch (unit.toLowerCase()) {
+    case 'kb':
+      return bytes / 1024;
+    case 'mb':
+      return bytes / Math.pow(1024, 2);
+    case 'gb':
+      return bytes / Math.pow(1024, 3);
+    case 'tb':
+      return bytes / Math.pow(1024, 4);
+    default:
+      return bytes;
+  }
 };

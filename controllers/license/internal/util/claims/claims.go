@@ -21,9 +21,11 @@ import (
 	v1 "github.com/labring/sealos/controllers/license/api/v1"
 )
 
+// Claims is the data structure of license claims
 type Claims struct {
-	Type v1.LicenseType `json:"type"`
-	Data ClaimData      `json:"data"`
+	Type      v1.LicenseType `json:"type"`
+	ClusterID string         `json:"clusterID"`
+	Data      ClaimData      `json:"data"`
 
 	jwt.RegisteredClaims
 }
@@ -42,7 +44,25 @@ type AccountClaimData struct {
 	Amount int64 `json:"amount"`
 }
 
-// TODO add cluster claims data
+// ClusterClaimData is the data structure of cluster license
+// example:
+//	{
+//	  "nodeCount": 3,
+//	  "totalCPU": 6,
+//	  "totalMemory": 12,
+//	}
 
 type ClusterClaimData struct {
+	NodeCount   int `json:"nodeCount"`
+	TotalCPU    int `json:"totalCPU"`    // in core
+	TotalMemory int `json:"totalMemory"` // in GB
+}
+
+// Compare compares the claims with the data
+// return true if the claims is equal or lager to the data
+func (c *ClusterClaimData) Compare(data *ClusterClaimData) bool {
+	if c.NodeCount > data.NodeCount || c.TotalCPU > data.TotalCPU || c.TotalMemory > data.TotalMemory {
+		return false
+	}
+	return true
 }

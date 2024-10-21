@@ -15,7 +15,7 @@ export const editModeMap = (isEdit: boolean) => {
 
   return {
     title: 'Application Deployment',
-    applyBtnText: 'Deploy',
+    applyBtnText: 'Deploy Application',
     applyMessage: 'Confirm Deploy Application?',
     applySuccess: 'Deployment Successful',
     applyError: 'Deployment Failed'
@@ -29,7 +29,7 @@ export const defaultEditVal: AppEditType = {
   cmdParam: '',
   replicas: 1,
   cpu: 100,
-  memory: 64,
+  memory: 128,
   networks: [
     {
       networkName: '',
@@ -38,7 +38,8 @@ export const defaultEditVal: AppEditType = {
       protocol: 'HTTP',
       openPublicDomain: false,
       publicDomain: '',
-      customDomain: ''
+      customDomain: '',
+      domain: ''
     }
   ],
   envs: [],

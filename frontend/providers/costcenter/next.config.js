@@ -19,7 +19,6 @@ const nextConfig = {
     outputFileTracingRoot: path.join(__dirname, '../../')
   },
   async headers() {
-    console.log(ContentSecurityPolicy.replace(/\s{2,}/g, ' ').trim());
     return [
       {
         source: '/',
@@ -38,6 +37,15 @@ const nextConfig = {
             value: ContentSecurityPolicy.replace(/\s{2,}/g, ' ').trim()
           }
         ]
+      }
+    ];
+  },
+  async redirects() {
+    return [
+      {
+        source: '/',
+        destination: '/cost_overview',
+        permanent: true
       }
     ];
   }

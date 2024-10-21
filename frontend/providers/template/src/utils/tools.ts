@@ -3,6 +3,7 @@ import dayjs from 'dayjs';
 import { useTranslation } from 'next-i18next';
 import { cloneDeep, forEach, isNumber, isBoolean, isObject, has } from 'lodash';
 import { templateDeployKey } from '@/constants/keys';
+import { EnvResponse } from '@/types';
 
 /**
  * copy text data
@@ -194,12 +195,15 @@ export function downLoadBold(content: BlobPart, type: string, fileName: string) 
 
 export const parseGithubUrl = (url: string) => {
   if (!url) return null;
-  var urlObj = new URL(url);
-  var pathParts = urlObj.pathname.split('/');
+  let urlObj = new URL(url);
+  let pathParts = urlObj.pathname.split('/');
+
   return {
+    hostname: urlObj.hostname,
     organization: pathParts[1],
     repository: pathParts[2],
-    branch: pathParts[3]
+    branch: pathParts[3],
+    remainingPath: pathParts.slice(4).join('/') + urlObj.search
   };
 };
 
@@ -221,7 +225,6 @@ export const processEnvValue = (obj: any, labelName: string) => {
     newDeployment.metadata.labels = newDeployment.metadata.labels || {};
     newDeployment.metadata.labels[templateDeployKey] = labelName;
   }
-  // console.log(obj.metadata, newDeployment.metadata, 'obj');
 
   return newDeployment;
 };
@@ -240,3 +243,43 @@ export function deepSearch(obj: any): string {
   }
   return 'Error';
 }
+
+export const formatStarNumber = (number: number) => {
+  if (number < 1000) {
+    return number.toString();
+  } else if (number < 10000) {
+    const thousands = Math.floor(number / 1000);
+    const remainder = number % 1000;
+    return `${thousands}.${remainder.toString()[0]}k`;
+  } else {
+    return (number / 1000).toFixed(1) + 'k';
+  }
+};
+
+export function compareFirstLanguages(acceptLanguageHeader: string) {
+  const indexOfZh = acceptLanguageHeader.indexOf('zh');
+  const indexOfEn = acceptLanguageHeader.indexOf('en');
+  if (indexOfZh === -1) return 'en';
+  if (indexOfEn === -1 || indexOfZh < indexOfEn) return 'zh';
+  return 'en';
+}
+
+export function getTemplateEnvs(namespace?: string): EnvResponse {
+  const TemplateEnvs: EnvResponse = {
+    SEALOS_CLOUD_DOMAIN:
+      process.env.SEALOS_USER_DOMAIN || process.env.SEALOS_CLOUD_DOMAIN || 'cloud.sealos.io',
+    SEALOS_CERT_SECRET_NAME: process.env.SEALOS_CERT_SECRET_NAME || 'wildcard-cert',
+    TEMPLATE_REPO_URL:
+      process.env.TEMPLATE_REPO_URL || 'https://github.com/labring-actions/templates',
+    TEMPLATE_REPO_BRANCH: process.env.TEMPLATE_REPO_BRANCH || 'main',
+    SEALOS_NAMESPACE: namespace || '',
+    SEALOS_SERVICE_ACCOUNT: namespace?.replace('ns-', '') || '',
+    SHOW_AUTHOR: process.env.SHOW_AUTHOR || 'false',
+    DESKTOP_DOMAIN: process.env.DESKTOP_DOMAIN || 'cloud.sealos.io'
+  };
+  return TemplateEnvs;
+}
+
+export const formatMoney = (mone: number) => {
+  return mone / 1000000;
+};

@@ -41,6 +41,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       },
       [DBTypeEnum.weaviate]: {
         key: 'weaviate'
+      },
+      [DBTypeEnum.milvus]: {
+        key: 'milvus'
       }
     };
 
@@ -50,7 +53,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       data: await GetStatefulSetByName({ name: temp, req })
     });
   } catch (err: any) {
-    console.log(err?.body, 'api:getStatefulSetByName');
     jsonRes(res, {
       code: 500,
       error: err

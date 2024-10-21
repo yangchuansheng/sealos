@@ -1,26 +1,28 @@
-import React, { useMemo, useState } from 'react';
-import {
-  Box,
-  Flex,
-  useTheme,
-  Tag,
-  Accordion,
-  AccordionButton,
-  AccordionItem,
-  AccordionPanel,
-  AccordionIcon
-} from '@chakra-ui/react';
-import type { AppDetailType } from '@/types/app';
-import { useCopyData, printMemory } from '@/utils/tools';
-import { useUserStore } from '@/store/user';
-import styles from '../index.module.scss';
-import dynamic from 'next/dynamic';
-const ConfigMapDetailModal = dynamic(() => import('./ConfigMapDetailModal'));
-import { MOCK_APP_DETAIL } from '@/mock/apps';
-import { useTranslation } from 'next-i18next';
-import MyTooltip from '@/components/MyTooltip';
 import GPUItem from '@/components/GPUItem';
 import MyIcon from '@/components/Icon';
+import { MOCK_APP_DETAIL } from '@/mock/apps';
+import { useUserStore } from '@/store/user';
+import type { AppDetailType } from '@/types/app';
+import { printMemory, useCopyData } from '@/utils/tools';
+import {
+  Accordion,
+  AccordionButton,
+  AccordionIcon,
+  AccordionItem,
+  AccordionPanel,
+  Box,
+  Flex,
+  Tag,
+  useTheme
+} from '@chakra-ui/react';
+import { MyTooltip } from '@sealos/ui';
+import { useTranslation } from 'next-i18next';
+import dynamic from 'next/dynamic';
+import React, { useMemo, useState } from 'react';
+import { sealosApp } from 'sealos-desktop-sdk/app';
+import styles from '../index.module.scss';
+
+const ConfigMapDetailModal = dynamic(() => import('./ConfigMapDetailModal'));
 
 const AppBaseInfo = ({ app = MOCK_APP_DETAIL }: { app: AppDetailType }) => {
   const { t } = useTranslation();
@@ -97,22 +99,60 @@ const AppBaseInfo = ({ app = MOCK_APP_DETAIL }: { app: AppDetailType }) => {
 
   return (
     <Box px={6} py={7} position={'relative'}>
+      {app?.source?.hasSource && (
+        <Box fontSize={'base'} mb={'12px'}>
+          <Flex alignItems={'center'} gap={'8px'} color={'grayModern.600'} fontWeight={'bold'}>
+            <MyIcon w={'16px'} name={'target'}></MyIcon>
+            <Box>{t('Application Source')}</Box>
+          </Flex>
+          <Box mt={'12px'} p={'16px'} backgroundColor={'grayModern.50'} borderRadius={'lg'}>
+            <Flex
+              flexWrap={'wrap'}
+              _notFirst={{
+                mt: 4
+              }}
+              cursor={'pointer'}
+              onClick={() => {
+                if (!app?.source?.sourceName) return;
+                if (app.source.sourceType === 'app_store') {
+                  sealosApp.runEvents('openDesktopApp', {
+                    appKey: 'system-template',
+                    pathname: '/instance',
+                    query: { instanceName: app.source.sourceName }
+                  });
+                }
+                if (app.source.sourceType === 'sealaf') {
+                  sealosApp.runEvents('openDesktopApp', {
+                    appKey: 'system-sealaf',
+                    pathname: '/',
+                    query: { instanceName: app.source.sourceName }
+                  });
+                }
+              }}
+            >
+              <Box flex={'0 0 110px'} w={0} color={'grayModern.900'}>
+                {t(app.source?.sourceType)}
+              </Box>
+              <Box color={'grayModern.600'}>{t('Manage all resources')}</Box>
+              <MyIcon name="upperRight" width={'14px'} color={'grayModern.600'} />
+            </Flex>
+          </Box>
+        </Box>
+      )}
+
       <>
-        <Flex alignItems={'center'} color={'myGray.500'}>
+        <Flex alignItems={'center'} color={'grayModern.600'} fontSize={'base'} fontWeight={'bold'}>
           <MyIcon w={'16px'} name={'appType'}></MyIcon>
           <Box ml={2}>{t('Application Type')}</Box>
         </Flex>
-        <Flex mt={5}>
+        <Flex mt={5} gap={'8px'}>
           {appTags.map((tag) => (
             <Tag
               key={tag}
-              borderRadius={'24px'}
-              mr={4}
-              backgroundColor={'myWhite.400'}
-              border={'1px solid '}
-              borderColor={'myGray.100'}
-              px={4}
-              py={1}
+              borderRadius={'33px'}
+              backgroundColor={'grayModern.100'}
+              px={'12px'}
+              py={'6px'}
             >
               {t(tag)}
             </Tag>
@@ -126,11 +166,16 @@ const AppBaseInfo = ({ app = MOCK_APP_DETAIL }: { app: AppDetailType }) => {
           }}
           key={info.name}
         >
-          <Flex alignItems={'center'} color={'myGray.500'}>
+          <Flex
+            alignItems={'center'}
+            color={'grayModern.600'}
+            fontSize={'base'}
+            fontWeight={'bold'}
+          >
             <MyIcon w={'16px'} name={info.iconName as any}></MyIcon>
             <Box ml={2}>{t(info.name)}</Box>
           </Flex>
-          <Box mt={3} p={4} backgroundColor={'myWhite.400'} borderRadius={'sm'}>
+          <Box mt={3} p={4} backgroundColor={'grayModern.50'} borderRadius={'md'}>
             {info.items.map((item, i) => (
               <Flex
                 key={item.label || i}
@@ -139,11 +184,12 @@ const AppBaseInfo = ({ app = MOCK_APP_DETAIL }: { app: AppDetailType }) => {
                   mt: 4
                 }}
               >
-                <Box flex={'0 0 110px'} w={0} color={'blackAlpha.800'}>
+                <Box flex={'0 0 110px'} w={0} color={'grayModern.900'} fontSize={'12px'}>
                   {t(item.label)}
                 </Box>
                 <Box
-                  color={'blackAlpha.600'}
+                  fontSize={'12px'}
+                  color={'grayModern.600'}
                   flex={'1 0 0'}
                   textOverflow={'ellipsis'}
                   overflow={'hidden'}
@@ -165,11 +211,19 @@ const AppBaseInfo = ({ app = MOCK_APP_DETAIL }: { app: AppDetailType }) => {
         </Box>
       ))}
       <Box mt={6}>
-        <Flex alignItems={'center'} color={'myGray.500'}>
+        <Flex alignItems={'center'} color={'grayModern.600'} fontSize={'base'} fontWeight={'bold'}>
           <MyIcon w={'16px'} name={'settings'}></MyIcon>
           <Box ml={2}>{t('Advanced Configuration')}</Box>
         </Flex>
-        <Box mt={2} pt={4} backgroundColor={'myWhite.400'} borderRadius={'sm'}>
+        <Box
+          mt={2}
+          pt={4}
+          backgroundColor={'grayModern.50'}
+          borderRadius={'md'}
+          fontSize={'12px'}
+          color={'grayModern.600'}
+          fontWeight={'bold'}
+        >
           {[
             { label: 'Command', value: app.runCMD || 'Not Configured' },
             { label: 'Parameters', value: app.cmdParam || 'Not Configured' }
@@ -181,54 +235,57 @@ const AppBaseInfo = ({ app = MOCK_APP_DETAIL }: { app: AppDetailType }) => {
               }}
               px={4}
             >
-              <Box flex={'0 0 80px'} w={0} color={'blackAlpha.800'}>
+              <Box flex={'0 0 80px'} w={0}>
                 {t(item.label)}
               </Box>
-              <MyTooltip label={item.value}>
-                <Box
-                  flex={'1 0 0'}
-                  w={'0'}
-                  textAlign={'right'}
-                  color={'myGray.600'}
-                  textOverflow={'ellipsis'}
-                  overflow={'hidden'}
-                  whiteSpace={'nowrap'}
-                  onClick={() => copyData(item.value)}
-                  cursor={'pointer'}
-                >
-                  {t(item.value)}
-                </Box>
-              </MyTooltip>
             </Flex>
           ))}
           {/* env */}
           <Accordion allowToggle defaultIndex={0} mt={4}>
-            <AccordionItem borderBottom={0}>
+            <AccordionItem borderBottom={0} borderColor={'#EFF0F1'}>
               <AccordionButton
                 py={4}
                 display={'flex'}
                 textAlign={'left'}
                 _hover={{ backgroundColor: 'transparent' }}
+                fontSize={'12px'}
+                color={'grayModern.600'}
+                fontWeight={'bold'}
               >
-                <Box flex={1} color={'blackAlpha.800'}>
-                  {t('Environment Variables')}
-                </Box>
+                <Box flex={1}>{t('Environment Variables')}</Box>
                 <AccordionIcon />
               </AccordionButton>
               <AccordionPanel pt={0} pb={app.envs.length === 0 ? 0 : 3}>
-                <table className={styles.table}>
-                  <tbody>
-                    {app.envs.map((env) => {
+                {app.envs?.length > 0 && (
+                  <Flex
+                    flexDirection={'column'}
+                    border={theme.borders.base}
+                    bg={'#fff'}
+                    borderRadius={'md'}
+                  >
+                    {app.envs.map((env, index) => {
                       const valText = env.value
                         ? env.value
                         : env.valueFrom
                         ? 'value from | ***'
                         : '';
                       return (
-                        <tr key={env.key}>
-                          <th>{env.key}</th>
+                        <Flex
+                          key={env.key}
+                          gap={'24px'}
+                          px="10px"
+                          py="8px"
+                          borderBottom={'1px solid'}
+                          borderBottomColor={
+                            index !== app.envs.length - 1 ? 'grayModern.150' : 'transparent'
+                          }
+                        >
+                          <Box flex={1} maxW={'40%'} overflowWrap={'break-word'}>
+                            {env.key}
+                          </Box>
                           <MyTooltip label={valText}>
-                            <th
+                            <Box
+                              flex={1}
                               className={styles.textEllipsis}
                               style={{
                                 userSelect: 'auto',
@@ -237,34 +294,36 @@ const AppBaseInfo = ({ app = MOCK_APP_DETAIL }: { app: AppDetailType }) => {
                               onClick={() => copyData(valText)}
                             >
                               {valText}
-                            </th>
+                            </Box>
                           </MyTooltip>
-                        </tr>
+                        </Flex>
                       );
                     })}
-                  </tbody>
-                </table>
+                  </Flex>
+                )}
               </AccordionPanel>
             </AccordionItem>
           </Accordion>
           {/* configMap */}
           <Accordion allowToggle defaultIndex={0}>
-            <AccordionItem borderBottom={0}>
+            <AccordionItem borderBottom={0} borderColor={'#EFF0F1'}>
               <AccordionButton
                 display={'flex'}
                 textAlign={'left'}
                 py={4}
                 _hover={{ backgroundColor: 'transparent' }}
+                fontSize={'12px'}
+                color={'grayModern.600'}
+                fontWeight={'bold'}
               >
-                <Box flex={1} color={'blackAlpha.800'}>
-                  {t('Configuration File')}
-                </Box>
+                <Box flex={1}>{t('Configuration File')}</Box>
                 <AccordionIcon />
               </AccordionButton>
               <AccordionPanel py={0}>
                 <Box
-                  borderRadius={'sm'}
+                  borderRadius={'md'}
                   overflow={'hidden'}
+                  bg={'#FFF'}
                   {...(app.configMapList.length > 0
                     ? {
                         mb: 3,
@@ -280,15 +339,18 @@ const AppBaseInfo = ({ app = MOCK_APP_DETAIL }: { app: AppDetailType }) => {
                       py={2}
                       cursor={'pointer'}
                       onClick={() => setDetailConfigMap(item)}
-                      bg={'myWhite.200'}
                       _notLast={{
                         borderBottom: theme.borders.base
                       }}
                     >
                       <MyIcon name={'configMap'} />
                       <Box ml={4} flex={'1 0 0'} w={0}>
-                        <Box color={'myGray.900'}>{item.mountPath}</Box>
-                        <Box className={styles.textEllipsis} color={'myGray.500'} fontSize={'sm'}>
+                        <Box color={'grayModern.900'}>{item.mountPath}</Box>
+                        <Box
+                          className={styles.textEllipsis}
+                          color={'grayModern.900'}
+                          fontSize={'sm'}
+                        >
                           {item.value}
                         </Box>
                       </Box>
@@ -300,22 +362,24 @@ const AppBaseInfo = ({ app = MOCK_APP_DETAIL }: { app: AppDetailType }) => {
           </Accordion>
           {/* store */}
           <Accordion allowToggle defaultIndex={0}>
-            <AccordionItem borderBottom={0}>
+            <AccordionItem borderBottom={0} borderColor={'#EFF0F1'}>
               <AccordionButton
                 display={'flex'}
                 textAlign={'left'}
                 py={4}
                 _hover={{ backgroundColor: 'transparent' }}
+                fontSize={'12px'}
+                color={'grayModern.600'}
+                fontWeight={'bold'}
               >
-                <Box flex={1} color={'blackAlpha.800'}>
-                  {t('Storage')}
-                </Box>
+                <Box flex={1}>{t('Storage')}</Box>
                 <AccordionIcon />
               </AccordionButton>
               <AccordionPanel py={0}>
                 <Box
-                  borderRadius={'sm'}
+                  borderRadius={'md'}
                   overflow={'hidden'}
+                  bg={'#FFF'}
                   {...(app.storeList.length > 0
                     ? {
                         mb: 4,
@@ -332,14 +396,17 @@ const AppBaseInfo = ({ app = MOCK_APP_DETAIL }: { app: AppDetailType }) => {
                       _notLast={{
                         borderBottom: theme.borders.base
                       }}
-                      bg={'myWhite.200'}
                     >
                       <MyIcon name={'store'} />
                       <Box ml={4} flex={'1 0 0'} w={0}>
-                        <Box color={'myGray.900'} fontWeight={'bold'}>
+                        <Box color={'grayModern.900'} fontWeight={'bold'}>
                           {item.path}
                         </Box>
-                        <Box className={styles.textEllipsis} color={'myGray.500'} fontSize={'sm'}>
+                        <Box
+                          className={styles.textEllipsis}
+                          color={'grayModern.900'}
+                          fontSize={'sm'}
+                        >
                           {item.value} Gi
                         </Box>
                       </Box>

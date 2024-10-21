@@ -22,12 +22,10 @@ import (
 	"strconv"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/version"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/labring/sealos/pkg/apply/processor"
-	"github.com/labring/sealos/pkg/client-go/kubernetes"
 	"github.com/labring/sealos/pkg/clusterfile"
 	"github.com/labring/sealos/pkg/constants"
 	"github.com/labring/sealos/pkg/exec"
@@ -76,20 +74,22 @@ func NewDefaultScaleApplier(ctx context.Context, current, cluster *v2.Cluster) (
 
 type Applier struct {
 	context.Context
-	ClusterDesired     *v2.Cluster
-	ClusterCurrent     *v2.Cluster
-	ClusterFile        clusterfile.Interface
-	Client             kubernetes.Client
-	CurrentClusterInfo *version.Info
-	RunNewImages       []string
+	ClusterDesired *v2.Cluster
+	ClusterCurrent *v2.Cluster
+	ClusterFile    clusterfile.Interface
+	RunNewImages   []string
 }
 
 func (c *Applier) Apply() error {
 	// clusterErr and appErr should not appear in the same time
 	var clusterErr, appErr error
 	defer func() {
-		switch clusterErr.(type) {
-		case *processor.CheckError, *processor.PreProcessError:
+		var checkError *processor.CheckError
+		var preProcessError *processor.PreProcessError
+		switch {
+		case errors.As(clusterErr, &checkError):
+			return
+		case errors.As(clusterErr, &preProcessError):
 			return
 		}
 		c.applyAfter()
@@ -217,11 +217,7 @@ func (c *Applier) installApp(images []string) error {
 	if err != nil {
 		return err
 	}
-	err = installProcessor.Execute(c.ClusterDesired)
-	if err != nil {
-		return err
-	}
-	return nil
+	return installProcessor.Execute(c.ClusterDesired)
 }
 
 func (c *Applier) scaleCluster(mj, md, nj, nd []string) error {
@@ -232,7 +228,10 @@ func (c *Applier) scaleCluster(mj, md, nj, nd []string) error {
 	logger.Info("start to scale this cluster")
 	logger.Debug("current cluster: master %s, worker %s", c.ClusterCurrent.GetMasterIPAndPortList(), c.ClusterCurrent.GetNodeIPAndPortList())
 	logger.Debug("desired cluster: master %s, worker %s", c.ClusterDesired.GetMasterIPAndPortList(), c.ClusterDesired.GetNodeIPAndPortList())
-	scaleProcessor, err := processor.NewScaleProcessor(c.ClusterFile, c.ClusterDesired.Name, c.ClusterDesired.Spec.Image, mj, md, nj, nd)
+
+	localpath := constants.Clusterfile(c.ClusterDesired.Name)
+	cf := clusterfile.NewClusterFile(localpath)
+	scaleProcessor, err := processor.NewScaleProcessor(cf, c.ClusterDesired.Name, c.ClusterDesired.Spec.Image, mj, md, nj, nd)
 	if err != nil {
 		return err
 	}

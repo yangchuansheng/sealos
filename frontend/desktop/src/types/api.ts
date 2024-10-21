@@ -1,7 +1,5 @@
-export type ApiResp<T = any> = {
+export type ApiResp<T = any, U = string> = {
   code?: number;
-  message?: string;
+  message?: U;
   data?: T;
 };
-export const INVITE_LIMIT = 5;
-export const TEAM_LIMIT = 5;

@@ -1,3 +1,4 @@
+import { userSystemNamespace } from '@/constants/account';
 import { UUID, createHash } from 'crypto';
 import * as yaml from 'js-yaml';
 export type RoleAction = 'Grant' | 'Deprive' | 'Change' | 'Create' | 'Modify';
@@ -22,38 +23,32 @@ type CRD = {
   kind: 'Operationrequest';
   metadata: {
     name: string;
-    namespace: string;
+    namespace: typeof userSystemNamespace;
   };
   spec: {
+    namespace: string;
     user: string;
     action: 'Deprive' | 'Grant' | 'Update';
     role: RoleType;
   };
 };
-export enum watchEventType {
-  ADDED = 'ADDED',
-  MODIFIED = 'MODIFIED',
-  DELETED = 'DELETED',
-  BOOKMARK = 'BOOKMARK'
-}
-export const generateRequestCrd = (props: CRD['spec'] & { namespace: string }) => {
-  const hash = createHash('sha256');
-  hash.update(JSON.stringify(props) + new Date().getTime());
-  const name = hash.digest('hex');
+export const generateRequestCrd = ({
+  ...props
+}: CRD['spec'] & { namespace: string; name: string }) => {
   const requestCrd: CRD = {
     apiVersion: 'user.sealos.io/v1',
     kind: 'Operationrequest',
     metadata: {
-      name,
-      namespace: props.namespace
+      name: props.name,
+      namespace: userSystemNamespace
     },
     spec: {
+      namespace: props.namespace,
       user: props.user,
       action: props.action,
       role: props.role
     }
   };
-
   try {
     const result = yaml.dump(requestCrd);
     return result;
@@ -66,6 +61,7 @@ type DeleteCRD = {
   kind: 'DeleteRequest';
   metadata: {
     name: string;
+    namespace: typeof userSystemNamespace;
   };
   spec: {
     user: string;
@@ -79,7 +75,8 @@ export const deleteRequestCrd = (props: DeleteCRD['spec']) => {
     apiVersion: 'user.sealos.io/v1',
     kind: 'DeleteRequest',
     metadata: {
-      name
+      name,
+      namespace: userSystemNamespace
     },
     spec: {
       user: props.user

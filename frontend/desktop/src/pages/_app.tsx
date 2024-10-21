@@ -1,8 +1,10 @@
+import { useConfigStore } from '@/stores/config';
 import { theme } from '@/styles/chakraTheme';
 import '@/styles/globals.scss';
 import { getCookie } from '@/utils/cookieUtils';
 import { ChakraProvider } from '@chakra-ui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import '@sealos/driver/src/driver.css';
+import { Hydrate, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { appWithTranslation, useTranslation } from 'next-i18next';
 import type { AppProps } from 'next/app';
 import Router from 'next/router';
@@ -13,9 +15,7 @@ import { useEffect } from 'react';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // refetchOnWindowFocus: false,
       retry: false
-      // cacheTime: 0
     }
   }
 });
@@ -27,6 +27,11 @@ Router.events.on('routeChangeError', () => NProgress.done());
 
 const App = ({ Component, pageProps }: AppProps) => {
   const { i18n } = useTranslation();
+  const { initAppConfig } = useConfigStore();
+
+  useEffect(() => {
+    initAppConfig();
+  }, []);
 
   useEffect(() => {
     const lang = getCookie('NEXT_LOCALE');
@@ -35,9 +40,11 @@ const App = ({ Component, pageProps }: AppProps) => {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ChakraProvider theme={theme}>
-        <Component {...pageProps} />
-      </ChakraProvider>
+      <Hydrate state={pageProps.dehydratedState}>
+        <ChakraProvider theme={theme}>
+          <Component {...pageProps} />
+        </ChakraProvider>
+      </Hydrate>
     </QueryClientProvider>
   );
 };

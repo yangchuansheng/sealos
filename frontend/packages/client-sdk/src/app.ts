@@ -1,12 +1,6 @@
 import { v4 } from 'uuid';
 import { API_NAME } from './constants';
-import {
-  AppMessageType,
-  AppSendMessageType,
-  MasterReplyMessageType,
-  Session,
-  SessionV1
-} from './types';
+import { AppMessageType, AppSendMessageType, MasterReplyMessageType, SessionV1 } from './types';
 import { isBrowser } from './utils';
 
 class ClientSDK {
@@ -15,7 +9,8 @@ class ClientSDK {
   private desktopOrigin = '*';
   private commonConfig = {
     appKey: '',
-    clientLocation: ''
+    clientLocation: '',
+    success: false
   };
   private userSession: SessionV1 | undefined;
   private readonly callback = new Map<string, (data: MasterReplyMessageType) => void>();
@@ -45,7 +40,7 @@ class ClientSDK {
 
         this.callback.set(messageId, (data: MasterReplyMessageType) => {
           clearTimeout(timer);
-          if (data.success === true) {
+          if (data.success) {
             resolve(data.data);
           } else {
             reject(data);

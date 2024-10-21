@@ -1,8 +1,7 @@
 // http.ts
-import { ApiResp } from '@/types/api';
 import useSessionStore from '@/stores/session';
+import { ApiResp } from '@/types/api';
 import axios, { AxiosRequestConfig, AxiosResponse, RawAxiosRequestHeaders } from 'axios';
-import { ValuationData } from '@/types/valuation';
 const request = axios.create({
   baseURL: '/',
   withCredentials: true,
@@ -15,20 +14,16 @@ request.interceptors.request.use(
     // auto append service prefix
     let _headers: RawAxiosRequestHeaders = config.headers || {};
     const session = useSessionStore.getState().session;
-
     if (config.url && config.url?.startsWith('/api/')) {
       _headers['Authorization'] = encodeURIComponent(session?.kubeconfig || '');
     }
-
-    // if (process.env.NODE_ENV === 'development') {
-    //   _headers['Authorization'] = encodeURIComponent(process.env.NEXT_PUBLIC_MOCK_KUBECONFIG || '');
-    // }
 
     if (!config.headers || config.headers['Content-Type'] === '') {
       _headers['Content-Type'] = 'application/json';
     }
 
     config.headers = _headers;
+    config.data = { ...config.data, internalToken: session.token };
     // nprogress.start();
     return config;
   },

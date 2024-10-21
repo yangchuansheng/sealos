@@ -17,8 +17,10 @@ limitations under the License.
 package controllers
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +35,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/rand"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -53,6 +57,7 @@ type ObjectStorageUserReconciler struct {
 	InternalEndpoint  string
 	ExternalEndpoint  string
 	OSUDetectionCycle time.Duration
+	QuotaEnabled      bool
 }
 
 const (
@@ -65,12 +70,24 @@ const (
 	OSExternalEndpointEnv = "OSExternalEndpoint"
 	OSNamespace           = "OSNamespace"
 	OSAdminSecret         = "OSAdminSecret"
+	QuotaEnabled          = "QuotaEnabled"
+
+	OSKeySecret          = "object-storage-key"
+	OSKeySecretAccessKey = "accessKey"
+	OSKeySecretSecretKey = "secretKey"
+	OSKeySecretInternal  = "internal"
+	OSKeySecretExternal  = "external"
+	OSKeySecretBucket    = "bucket"
+
+	ResourceQuotaPrefix       = "quota-"
+	ResourceObjectStorageSize = "objectstorage/size"
 )
 
 //+kubebuilder:rbac:groups=objectstorage.sealos.io,resources=objectstorageusers,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=objectstorage.sealos.io,resources=objectstorageusers/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=objectstorage.sealos.io,resources=objectstorageusers/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,resources=resourcequotas,verbs=get;list;watch;create;update;patch;delete
 
 func (r *ObjectStorageUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	username := req.Name
@@ -125,7 +142,16 @@ func (r *ObjectStorageUserReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, nil
 	}
 
-	updated := r.initObjectStorageUser(user, username)
+	resourceQuota := &corev1.ResourceQuota{}
+	if err := r.Get(ctx, client.ObjectKey{Name: ResourceQuotaPrefix + userNamespace, Namespace: userNamespace}, resourceQuota); err != nil {
+		r.Logger.Error(err, "failed to get resource quota", "name", ResourceQuotaPrefix+userNamespace, "namespace", userNamespace)
+		return ctrl.Result{}, err
+	}
+
+	quota := resourceQuota.Spec.Hard.Name(ResourceObjectStorageSize, resource.BinarySI)
+	used := resourceQuota.Status.Used.Name(ResourceObjectStorageSize, resource.BinarySI)
+
+	updated := r.initObjectStorageUser(user, username, quota.Value())
 
 	accessKey := user.Status.AccessKey
 	secretKey := user.Status.SecretKey
@@ -144,6 +170,27 @@ func (r *ObjectStorageUserReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 	}
 
+	secret := &corev1.Secret{}
+	if err := r.Get(ctx, client.ObjectKey{Name: OSKeySecret, Namespace: userNamespace}, secret); err != nil {
+		if !errors.IsNotFound(err) {
+			r.Logger.Error(err, "failed to get object storage key secret", "name", OSKeySecret, "namespace", userNamespace)
+			return ctrl.Result{}, err
+		}
+
+		if err := r.newObjectStorageKeySecret(ctx, secret, user, accessKey, secretKey); err != nil {
+			r.Logger.Error(err, "failed to new object storage key secret", "name", OSKeySecret, "namespace", userNamespace)
+			return ctrl.Result{}, err
+		}
+	}
+
+	keySecretUpdated := r.initObjectStorageKeySecret(secret, accessKey, secretKey)
+
+	if keySecretUpdated {
+		if err := r.Update(ctx, secret); err != nil {
+			r.Logger.Error(err, "failed to update object storage key secret", "name", OSKeySecret, "namespace", userNamespace)
+		}
+	}
+
 	// check whether the space used exceeds the quota
 	size, objectsCount, err := myObjectStorage.GetUserObjectStorageSize(r.OSClient, user.Name)
 	if err != nil {
@@ -154,6 +201,14 @@ func (r *ObjectStorageUserReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if user.Status.Size != size {
 		user.Status.Size = size
 		updated = true
+	}
+
+	if used.Value() != size {
+		resourceQuota.Status.Used[ResourceObjectStorageSize] = resource.MustParse(strconv.FormatInt(size, 10))
+		if err := r.Status().Update(ctx, resourceQuota); err != nil {
+			r.Logger.Error(err, "failed to update status", "name", resourceQuota.Name, "namespace", userNamespace)
+			return ctrl.Result{}, err
+		}
 	}
 
 	if user.Status.ObjectsCount != objectsCount {
@@ -170,7 +225,7 @@ func (r *ObjectStorageUserReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	r.Logger.V(1).Info("[user] user info", "name", user.Name, "quota", user.Status.Quota, "size", size, "objectsCount", user.Status.ObjectsCount)
 
-	if size > user.Status.Quota {
+	if r.QuotaEnabled && size > user.Status.Quota {
 		if err := r.addUserToGroup(ctx, accessKey, UserDenyWriteGroup); err != nil {
 			r.Logger.Error(err, "failed to add user to userDenyWrite group")
 			return ctrl.Result{}, err
@@ -197,6 +252,31 @@ func (r *ObjectStorageUserReconciler) NewObjectStorageUser(ctx context.Context, 
 	}
 
 	return nil
+}
+
+func (r *ObjectStorageUserReconciler) newObjectStorageKeySecret(ctx context.Context, secret *corev1.Secret, user *objectstoragev1.ObjectStorageUser, accessKey, secretKey string) error {
+	secret.SetName(OSKeySecret)
+	secret.SetNamespace(user.Namespace)
+
+	secret.Data = make(map[string][]byte)
+	secret.Data[OSKeySecretAccessKey] = []byte(accessKey)
+	secret.Data[OSKeySecretSecretKey] = []byte(secretKey)
+	secret.Data[OSKeySecretInternal] = []byte(r.InternalEndpoint)
+	secret.Data[OSKeySecretExternal] = []byte(r.ExternalEndpoint)
+
+	reference := metav1.OwnerReference{
+		APIVersion:         user.APIVersion,
+		Kind:               user.Kind,
+		Name:               user.Name,
+		UID:                user.UID,
+		Controller:         nil,
+		BlockOwnerDeletion: nil,
+	}
+	refList := make([]metav1.OwnerReference, 0)
+	refList = append(refList, reference)
+	secret.SetOwnerReferences(refList)
+
+	return r.Create(ctx, secret)
 }
 
 func (r *ObjectStorageUserReconciler) addUserToGroup(ctx context.Context, user string, group string) error {
@@ -280,12 +360,11 @@ func (r *ObjectStorageUserReconciler) deleteObjectStorageUser(ctx context.Contex
 	return nil
 }
 
-func (r *ObjectStorageUserReconciler) initObjectStorageUser(user *objectstoragev1.ObjectStorageUser, username string) bool {
+func (r *ObjectStorageUserReconciler) initObjectStorageUser(user *objectstoragev1.ObjectStorageUser, username string, quota int64) bool {
 	var updated = false
 
-	if user.Status.Quota == 0 {
-		// 1073741824Byte = 1G
-		user.Status.Quota = 1073741824
+	if user.Status.Quota != quota {
+		user.Status.Quota = quota
 		updated = true
 	}
 
@@ -306,6 +385,32 @@ func (r *ObjectStorageUserReconciler) initObjectStorageUser(user *objectstoragev
 
 	if user.Status.External != r.ExternalEndpoint {
 		user.Status.External = r.ExternalEndpoint
+		updated = true
+	}
+
+	return updated
+}
+
+func (r *ObjectStorageUserReconciler) initObjectStorageKeySecret(secret *corev1.Secret, accessKey, secretKey string) bool {
+	var updated = false
+
+	if !bytes.Equal(secret.Data[OSKeySecretAccessKey], []byte(accessKey)) {
+		secret.Data[OSKeySecretAccessKey] = []byte(accessKey)
+		updated = true
+	}
+
+	if !bytes.Equal(secret.Data[OSKeySecretSecretKey], []byte(secretKey)) {
+		secret.Data[OSKeySecretSecretKey] = []byte(secretKey)
+		updated = true
+	}
+
+	if !bytes.Equal(secret.Data[OSKeySecretInternal], []byte(r.InternalEndpoint)) {
+		secret.Data[OSKeySecretInternal] = []byte(r.InternalEndpoint)
+		updated = true
+	}
+
+	if !bytes.Equal(secret.Data[OSKeySecretExternal], []byte(r.ExternalEndpoint)) {
+		secret.Data[OSKeySecretExternal] = []byte(r.ExternalEndpoint)
 		updated = true
 	}
 
@@ -335,6 +440,9 @@ func (r *ObjectStorageUserReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if internalEndpoint == "" || externalEndpoint == "" || oSNamespace == "" || oSAdminSecret == "" {
 		return fmt.Errorf("failed to get the endpoint or namespace or admin secret env of object storage")
 	}
+
+	quotaEnabled := env.GetBoolWithDefault(QuotaEnabled, true)
+	r.QuotaEnabled = quotaEnabled
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&objectstoragev1.ObjectStorageUser{}).

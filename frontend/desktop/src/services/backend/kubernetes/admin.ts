@@ -1,7 +1,7 @@
-import * as k8s from '@kubernetes/client-node';
-// import { customAlphabet } from 'nanoid';
-import { k8sFormatTime } from '@/utils/format';
 import { StatusCR, UserCR } from '@/types';
+import { k8sFormatTime } from '@/utils/format';
+import * as k8s from '@kubernetes/client-node';
+import { KubeConfig } from '@kubernetes/client-node';
 
 export function K8sApiDefault(): k8s.KubeConfig {
   const kc = new k8s.KubeConfig();
@@ -54,6 +54,7 @@ async function watchClusterObject({
     }
   }
 }
+
 async function watchCustomClusterObject({
   kc,
   group,
@@ -96,6 +97,7 @@ async function watchCustomClusterObject({
   }
   return null;
 }
+
 async function setUserKubeconfig(kc: k8s.KubeConfig, uid: string, k8s_username: string) {
   const resourceKind = 'User';
   const group = 'user.sealos.io';
@@ -182,6 +184,7 @@ async function setUserTeamCreate(kc: k8s.KubeConfig, k8s_username: string, owner
   await client.createClusterCustomObject(group, version, plural, resourceObj);
   return k8s_username;
 }
+
 async function removeUserTeam(kc: k8s.KubeConfig, k8s_username: string) {
   const group = 'user.sealos.io';
   const version = 'v1';
@@ -209,40 +212,55 @@ async function removeUserTeam(kc: k8s.KubeConfig, k8s_username: string) {
   );
   return k8s_username;
 }
-// 系统迁移
-async function setUserKubeconfigByuid(kc: k8s.KubeConfig, uid: string) {
-  const resourceType = 'User';
+async function removeUser(kc: k8s.KubeConfig, k8s_username: string) {
   const group = 'user.sealos.io';
   const version = 'v1';
   const plural = 'users';
-  const labelSelector = `uid=${uid}`;
-  let name: string = '';
+  const updateTime = k8sFormatTime(new Date());
   const client = kc.makeApiClient(k8s.CustomObjectsApi);
-  const { response } = (await client.listClusterCustomObject(
+  const patchs = [
+    { op: 'add', path: '/metadata/labels/user.sealos.io~1status', value: 'Deleted' },
+    { op: 'replace', path: '/metadata/labels/updateTime', value: updateTime }
+  ];
+  await client.patchClusterCustomObject(
     group,
     version,
     plural,
+    k8s_username,
+    patchs,
     undefined,
     undefined,
     undefined,
-    undefined,
-    labelSelector
-  )) as unknown as { response: { body: { items: any[] } } };
-  if (response.body.items.length === 0) {
-    console.log(`Created new ${resourceType} with labels ${JSON.stringify(labelSelector)}`);
-  } else {
-    // 找name
-    const existingResource = response.body.items[response.body.items.length - 1];
-    name = existingResource.metadata.name;
-  }
-  return name;
+    {
+      headers: {
+        'Content-Type': 'application/json-patch+json'
+      }
+    }
+  );
+  return k8s_username;
 }
-
-export const getUserKubeconfigByuid = async (uid: string) => {
-  const kc = K8sApiDefault();
-  return await setUserKubeconfigByuid(kc, uid);
+export const getUserCr = async (kc: KubeConfig, name: string) => {
+  const resourceKind = 'User';
+  const group = 'user.sealos.io';
+  const version = 'v1';
+  const plural = 'users';
+  const client = kc.makeApiClient(k8s.CustomObjectsApi);
+  return await client
+    .getClusterCustomObject(group, version, plural, name)
+    .then((res) => res.body as UserCR);
 };
-
+// for enter user state
+export const getUserKubeconfigNotPatch = async (name: string) => {
+  const kc = K8sApiDefault();
+  try {
+    const userCr = await getUserCr(kc, name);
+    if (userCr?.status?.kubeConfig) return userCr.status.kubeConfig;
+    else return null;
+  } catch (e) {
+    return null;
+  }
+};
+// for update sign in
 export const getUserKubeconfig = async (uid: string, k8s_username: string) => {
   const kc = K8sApiDefault();
   const group = 'user.sealos.io';
@@ -259,7 +277,7 @@ export const getUserKubeconfig = async (uid: string, k8s_username: string) => {
   });
   return kubeconfig;
 };
-// 创建Team用的伪user
+// for create workspace
 export const getTeamKubeconfig = async (k8s_username: string, owner: string) => {
   const kc = K8sApiDefault();
   const group = 'user.sealos.io';
@@ -303,3 +321,71 @@ export const setUserTeamDelete = async (k8s_username: string) => {
   });
   return body;
 };
+export const setUserDelete = async (k8s_username: string) => {
+  const kc = K8sApiDefault();
+  const group = 'user.sealos.io';
+  const version = 'v1';
+  const plural = 'users';
+  try {
+    const userCr = await getUserCr(kc, k8s_username);
+    // @ts-ignore
+    if (userCr.metadata?.labels?.['user.sealos.io/status'] === 'Deleted') return true;
+  } catch (e) {
+    return true;
+  }
+  await removeUser(kc, k8s_username);
+
+  const body = await watchCustomClusterObject({
+    kc,
+    group,
+    version,
+    plural,
+    fn(_, cur) {
+      return cur?.metadata?.labels?.['user.sealos.io/status'] === 'Deleted';
+    },
+    name: k8s_username,
+    interval: 100
+  });
+  return !!body;
+};
+
+export const setUserWorkspaceLock = async (namespace: string) => {
+  try {
+    const kc = K8sApiDefault();
+    const client = kc.makeApiClient(k8s.CoreV1Api);
+    const res = await client.patchNamespace(
+      namespace,
+      {
+        metadata: {
+          annotations: {
+            'debt.sealos/status': WorkspaceDebtStatus.TerminateSuspend
+          }
+        }
+      },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        headers: {
+          'Content-Type': 'application/strategic-merge-patch+json'
+        }
+      }
+    );
+    return (
+      res.body.metadata?.annotations?.['debt.sealos/status'] ===
+      WorkspaceDebtStatus.TerminateSuspend
+    );
+  } catch (e) {
+    console.log(e);
+    throw e;
+  }
+};
+
+enum WorkspaceDebtStatus {
+  Normal = 'Normal',
+  Suspend = 'Suspend',
+  Resume = 'Resume',
+  TerminateSuspend = 'TerminateSuspend'
+}

@@ -1,20 +1,28 @@
-import React, { useCallback, useState } from 'react';
-import { useRouter } from 'next/router';
-import { Box, Button, Flex, MenuButton } from '@chakra-ui/react';
-import { DBListItemType } from '@/types/db';
+import { pauseDBByName, restartDB, startDBByName } from '@/api/db';
 import DBStatusTag from '@/components/DBStatusTag';
 import MyIcon from '@/components/Icon';
-import { useTheme } from '@chakra-ui/react';
-import { useGlobalStore } from '@/store/global';
-import { useToast } from '@/hooks/useToast';
-import { restartDB, pauseDBByName, startDBByName } from '@/api/db';
-import MyTable from '@/components/Table';
-import dynamic from 'next/dynamic';
-import MyMenu from '@/components/Menu';
+import { DBComponentNameMap, DBStatusEnum } from '@/constants/db';
 import { useConfirm } from '@/hooks/useConfirm';
-import { DBStatusEnum, DBComponentNameMap } from '@/constants/db';
+import UpdateModal from '@/pages/db/detail/components/UpdateModal';
+import useEnvStore from '@/store/env';
+import { useGlobalStore } from '@/store/global';
+import { DBListItemType } from '@/types/db';
 import { printMemory } from '@/utils/tools';
+import {
+  Box,
+  Button,
+  Center,
+  Flex,
+  Image,
+  MenuButton,
+  useDisclosure,
+  useTheme
+} from '@chakra-ui/react';
+import { MyTable, SealosMenu, useMessage } from '@sealos/ui';
 import { useTranslation } from 'next-i18next';
+import dynamic from 'next/dynamic';
+import { useRouter } from 'next/router';
+import { useCallback, useState } from 'react';
 
 const DelModal = dynamic(() => import('@/pages/db/detail/components/DelModal'));
 
@@ -27,13 +35,20 @@ const DBList = ({
 }) => {
   const { t } = useTranslation();
   const { setLoading } = useGlobalStore();
-  const { toast } = useToast();
+  const { message: toast } = useMessage();
   const theme = useTheme();
   const router = useRouter();
-
+  const { SystemEnv } = useEnvStore();
+  const {
+    isOpen: isOpenUpdateModal,
+    onOpen: onOpenUpdateModal,
+    onClose: onCloseUpdateModal
+  } = useDisclosure();
   const [delAppName, setDelAppName] = useState('');
+  const [updateAppName, setUpdateAppName] = useState('');
+
   const { openConfirm: onOpenPause, ConfirmChild: PauseChild } = useConfirm({
-    content: t('Pause Hint')
+    content: t('pause_hint')
   });
 
   const handleRestartApp = useCallback(
@@ -42,12 +57,12 @@ const DBList = ({
         setLoading(true);
         await restartDB({ dbName: db.name, dbType: db.dbType });
         toast({
-          title: t('Restart Success'),
+          title: t('restart_success'),
           status: 'success'
         });
       } catch (error: any) {
         toast({
-          title: typeof error === 'string' ? error : error.message || t('Restart Success'),
+          title: typeof error === 'string' ? error : error.message || t('restart_success'),
           status: 'error'
         });
         console.error(error, '==');
@@ -63,12 +78,12 @@ const DBList = ({
         setLoading(true);
         await pauseDBByName({ dbName: db.name, dbType: db.dbType });
         toast({
-          title: t('Pause Success'),
+          title: t('pause_success'),
           status: 'success'
         });
       } catch (error: any) {
         toast({
-          title: typeof error === 'string' ? error : error.message || t('Pause Error'),
+          title: typeof error === 'string' ? error : error.message || t('pause_error'),
           status: 'error'
         });
         console.error(error);
@@ -85,12 +100,12 @@ const DBList = ({
         setLoading(true);
         await startDBByName({ dbName: db.name, dbType: db.dbType });
         toast({
-          title: t('Start Success'),
+          title: t('start_success'),
           status: 'success'
         });
       } catch (error: any) {
         toast({
-          title: typeof error === 'string' ? error : error.message || t('Start Error'),
+          title: typeof error === 'string' ? error : error.message || t('start_error'),
           status: 'error'
         });
         console.error(error);
@@ -108,74 +123,77 @@ const DBList = ({
     render?: (item: DBListItemType) => JSX.Element;
   }[] = [
     {
-      title: 'Name',
+      title: t('name'),
       key: 'name',
       render: (item: DBListItemType) => {
         return (
-          <Box pl={4} color={'myGray.900'} fontSize={'md'}>
+          <Box pl={4} color={'grayModern.900'} fontSize={'md'}>
             {item.name}
           </Box>
         );
       }
     },
     {
-      title: 'Type',
+      title: t('Type'),
       key: 'dbType',
-      render: (item: DBListItemType) => <>{DBComponentNameMap[item.dbType]}</>
+      render: (item: DBListItemType) => (
+        <Flex alignItems={'center'} gap={'6px'}>
+          <Image width={'20px'} height={'20px'} alt={item.id} src={`/images/${item.dbType}.svg`} />
+          {DBComponentNameMap[item.dbType]}
+        </Flex>
+      )
     },
     {
-      title: 'Status',
+      title: t('status'),
       key: 'status',
       render: (item: DBListItemType) => (
         <DBStatusTag conditions={item.conditions} status={item.status} />
       )
     },
     {
-      title: 'Creation Time',
+      title: t('creation_time'),
       dataIndex: 'createTime',
       key: 'createTime'
     },
     {
-      title: 'CPU',
+      title: t('cpu'),
       key: 'cpu',
       render: (item: DBListItemType) => <>{item.cpu / 1000}C</>
     },
     {
-      title: 'Memory',
+      title: t('memory'),
       key: 'memory',
       render: (item: DBListItemType) => <>{printMemory(item.memory)}</>
     },
     {
-      title: 'Storage',
+      title: t('storage'),
       key: 'storage',
       dataIndex: 'storage'
     },
     {
-      title: 'Operation',
+      title: t('operation'),
       key: 'control',
       render: (item: DBListItemType) => (
         <Flex>
           <Button
             mr={5}
-            variant={'base'}
-            leftIcon={<MyIcon name={'detail'} transform={'translateY(-1px)'} />}
-            px={3}
+            height={'32px'}
+            size={'sm'}
+            fontSize={'base'}
+            bg={'grayModern.150'}
+            color={'grayModern.900'}
+            _hover={{
+              color: 'brightBlue.600'
+            }}
+            leftIcon={<MyIcon name={'detail'} w={'16px'} />}
             onClick={() => router.push(`/db/detail?name=${item.name}&dbType=${item.dbType}`)}
           >
-            {t('Details')}
+            {t('details')}
           </Button>
-          <MyMenu
+          <SealosMenu
             width={100}
             Button={
-              <MenuButton
-                w={'32px'}
-                h={'32px'}
-                borderRadius={'sm'}
-                _hover={{
-                  bg: 'myWhite.400',
-                  color: 'hover.iconBlue'
-                }}
-              >
+              <MenuButton as={Button} variant={'square'} w={'30px'} h={'30px'}>
                 <MyIcon name={'more'} px={3} />
               </MenuButton>
             }
@@ -185,7 +203,7 @@ const DBList = ({
                     {
                       child: (
                         <>
-                          <MyIcon name={'continue'} w={'14px'} />
+                          <MyIcon name={'continue'} w={'16px'} />
                           <Box ml={2}>{t('Continue')}</Box>
                         </>
                       ),
@@ -196,20 +214,29 @@ const DBList = ({
                     {
                       child: (
                         <>
-                          <MyIcon name={'change'} w={'14px'} />
-                          <Box ml={2}>{t('Update')}</Box>
+                          <MyIcon name={'change'} w={'16px'} />
+                          <Box ml={2}>{t('update')}</Box>
                         </>
                       ),
-                      onClick: () => router.push(`/db/edit?name=${item.name}`)
+                      onClick: () => {
+                        if (item.source.hasSource && item.source.sourceType === 'sealaf') {
+                          setUpdateAppName(item.name);
+                          onOpenUpdateModal();
+                        } else {
+                          router.push(`/db/edit?name=${item.name}`);
+                        }
+                      },
+                      isDisabled: item.status.value === 'Updating' && !item.isDiskSpaceOverflow
                     },
                     {
                       child: (
                         <>
-                          <MyIcon name={'restart'} />
+                          <MyIcon name={'restart'} width={'16px'} />
                           <Box ml={2}>{t('Restart')}</Box>
                         </>
                       ),
-                      onClick: () => handleRestartApp(item)
+                      onClick: () => handleRestartApp(item),
+                      isDisabled: item.status.value === 'Updating'
                     }
                   ]),
               ...(item.status.value === DBStatusEnum.Running
@@ -217,7 +244,7 @@ const DBList = ({
                     {
                       child: (
                         <>
-                          <MyIcon name={'pause'} w={'14px'} />
+                          <MyIcon name={'pause'} w={'16px'} />
                           <Box ml={2}>{t('Pause')}</Box>
                         </>
                       ),
@@ -229,11 +256,18 @@ const DBList = ({
               {
                 child: (
                   <>
-                    <MyIcon name={'delete'} w={'12px'} />
+                    <MyIcon name={'delete'} w={'16px'} />
                     <Box ml={2}>{t('Delete')}</Box>
                   </>
                 ),
-                onClick: () => setDelAppName(item.name)
+                menuItemStyle: {
+                  _hover: {
+                    color: 'red.600',
+                    bg: 'rgba(17, 24, 36, 0.05)'
+                  }
+                },
+                onClick: () => setDelAppName(item.name),
+                isDisabled: item.status.value === 'Updating'
               }
             ]}
           />
@@ -243,35 +277,65 @@ const DBList = ({
   ];
 
   return (
-    <Box bg={'#F3F4F5'} px={'34px'} minH="100vh">
-      <Flex h={'88px'} alignItems={'center'}>
-        <Box mr={4} p={2} backgroundColor={'#FEFEFE'} border={theme.borders.sm} borderRadius={'sm'}>
-          <MyIcon name="logo" w={'24px'} h={'24px'} />
-        </Box>
-        <Box fontSize={'2xl'} color={'black'}>
+    <Box backgroundColor={'grayModern.100'} px={'32px'} minH="100vh">
+      <Flex h={'90px'} alignItems={'center'}>
+        <Center
+          mr={'16px'}
+          width={'46px'}
+          bg={'#FFF'}
+          height={'46px'}
+          border={theme.borders.base}
+          borderRadius={'md'}
+        >
+          <MyIcon name="logo" w={'30px'} h={'30px'} />
+        </Center>
+        <Box fontSize={'xl'} color={'grayModern.900'} fontWeight={'bold'}>
           {t('DBList')}
         </Box>
-        <Box ml={3} color={'gray.500'}>
+        <Box ml={'8px'} fontSize={'md'} fontWeight={'bold'} color={'grayModern.500'}>
           ( {dbList.length} )
         </Box>
         <Box flex={1}></Box>
-
+        {SystemEnv?.SHOW_DOCUMENT && (
+          <Button
+            variant={'outline'}
+            minW={'156px'}
+            h={'40px'}
+            mr={'16px'}
+            leftIcon={<MyIcon name={'docs'} w={'16px'} />}
+            onClick={() => window.open('https://sealos.run/docs/guides/dbprovider/')}
+          >
+            {t('use_docs')}
+          </Button>
+        )}
         <Button
-          flex={'0 0 155px'}
+          minW={'156px'}
           h={'40px'}
-          colorScheme={'primary'}
-          leftIcon={<MyIcon name={'plus'} w={'12px'} />}
-          variant={'primary'}
+          variant={'solid'}
+          leftIcon={<MyIcon name={'plus'} w={'20px'} />}
           onClick={() => router.push('/db/edit')}
         >
-          {t('Create DB')}
+          {t('create_db')}
         </Button>
       </Flex>
       <MyTable columns={columns} data={dbList} />
       <PauseChild />
       {!!delAppName && (
-        <DelModal dbName={delAppName} onClose={() => setDelAppName('')} onSuccess={refetchApps} />
+        <DelModal
+          source={dbList.find((i) => i.name === delAppName)?.source}
+          dbName={delAppName}
+          onClose={() => setDelAppName('')}
+          onSuccess={refetchApps}
+        />
       )}
+      <UpdateModal
+        source={dbList.find((i) => i.name === updateAppName)?.source}
+        isOpen={isOpenUpdateModal}
+        onClose={() => {
+          setUpdateAppName('');
+          onCloseUpdateModal();
+        }}
+      />
     </Box>
   );
 };

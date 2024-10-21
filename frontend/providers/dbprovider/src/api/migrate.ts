@@ -1,5 +1,5 @@
 import { DELETE, GET, POST } from '@/services/request';
-import { InternetMigrationCR } from '@/types/migrate';
+import { DumpForm, InternetMigrationCR } from '@/types/migrate';
 import { adaptMigrateList } from '@/utils/adapt';
 import { V1Pod } from '@kubernetes/client-node';
 
@@ -32,6 +32,8 @@ export const getLogByNameAndContainerName = (data: {
   podName: string;
   stream: boolean;
   logSize?: number;
+  sinceTime?: number;
+  previous?: boolean;
 }) => POST<string>('/api/migrate/getLogByName', data);
 
 export const getPodStatusByName = (podName: string) =>
@@ -39,3 +41,6 @@ export const getPodStatusByName = (podName: string) =>
 
 export const deleteMigrateJobByName = (name: string) =>
   DELETE(`/api/migrate/delJobByName?name=${name}`);
+
+export const applyDumpCR = (data: DumpForm) =>
+  POST<{ name: string }>('/api/migrate/createDump', data);

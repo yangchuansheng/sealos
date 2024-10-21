@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import React, { ReactNode, useCallback, useRef } from 'react';
 import {
   AlertDialog,
   AlertDialogBody,
@@ -11,7 +11,15 @@ import {
 } from '@chakra-ui/react';
 import { useTranslation } from 'next-i18next';
 
-export const useConfirm = ({ title = 'Prompt', content }: { title?: string; content: string }) => {
+export const useConfirm = ({
+  title = 'Prompt',
+  content,
+  otherContent
+}: {
+  title?: string;
+  content: string;
+  otherContent?: ReactNode;
+}) => {
   const { t } = useTranslation();
   const { isOpen, onOpen, onClose } = useDisclosure();
   const cancelRef = useRef(null);
@@ -38,10 +46,14 @@ export const useConfirm = ({ title = 'Prompt', content }: { title?: string; cont
                 {t(title)}
               </AlertDialogHeader>
 
-              <AlertDialogBody>{t(content)}</AlertDialogBody>
+              <AlertDialogBody>
+                {otherContent}
+                {t(content)}
+              </AlertDialogBody>
 
               <AlertDialogFooter>
                 <Button
+                  variant={'outline'}
                   colorScheme={'gray'}
                   onClick={() => {
                     onClose();
@@ -52,6 +64,7 @@ export const useConfirm = ({ title = 'Prompt', content }: { title?: string; cont
                 </Button>
                 <Button
                   ml={3}
+                  width={'88px'}
                   variant={'primary'}
                   onClick={() => {
                     onClose();

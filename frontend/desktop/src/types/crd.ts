@@ -1,5 +1,5 @@
-import { KubeConfig } from '@kubernetes/client-node';
-import { APPTYPE, displayType } from './app';
+import { APPTYPE, TAppMenuData, displayType } from './app';
+import { LicenseFrontendKey } from '@/constants/account';
 
 export type CRDMeta = {
   group: string; // group
@@ -13,6 +13,7 @@ export const userCRD = {
   Version: 'v1',
   Resource: 'users'
 };
+
 export type UserCR = {
   apiVersion: 'user.sealos.io/v1';
   kind: 'User';
@@ -42,7 +43,7 @@ export type UserCR = {
       status: string;
       type: string;
     }[];
-    kubeConfig: KubeConfig;
+    kubeConfig: string;
     observedCSRExpirationSeconds: number;
     observedGeneration: number;
     phase: string;
@@ -62,6 +63,7 @@ export type StatusCR = {
   };
   code: 404;
 };
+
 export type TAppCR = {
   apiVersion: 'app.sealos.io/v1';
   kind: 'App';
@@ -80,11 +82,7 @@ export type TAppCR = {
     displayType: displayType;
     i18n: Record<'zh' | 'zh-Hans', { name: string }>;
     icon: string;
-    menuData?: {
-      nameColor: string;
-      helpDropDown: boolean;
-      helpDocs: boolean | string;
-    };
+    menuData?: TAppMenuData[];
     name: string;
     type: APPTYPE;
   };
@@ -95,4 +93,56 @@ export type TAppCRList = {
   items: TAppCR[];
   kind: 'AppList';
   metadata: { continue: string; resourceVersion: string };
+};
+
+export type NotificationCR = {
+  metadata: {
+    creationTimestamp: string;
+    labels: {
+      isRead?: string;
+      [LicenseFrontendKey]?: string;
+    };
+    name: string;
+    namespace: string;
+    uid: string;
+  };
+  spec: {
+    from: string;
+    message: string;
+    timestamp: number;
+    title: string;
+    desktopPopup?: boolean;
+    i18ns?: {
+      zh?: {
+        from: string;
+        message: string;
+        title: string;
+      };
+    };
+  };
+};
+
+export type TNotification = {
+  uid: string;
+  name: string;
+  namespace: string;
+  creationTimestamp: string;
+  isRead: boolean;
+  licenseFrontend?: string;
+  timestamp: number;
+  desktopPopup: boolean;
+  i18n: {
+    [key in string]: {
+      from: string;
+      message: string;
+      title: string;
+    };
+  };
+};
+
+export const AccountMeta: CRDMeta = {
+  group: 'account.sealos.io',
+  version: 'v1',
+  namespace: 'sealos-system',
+  plural: 'accounts'
 };

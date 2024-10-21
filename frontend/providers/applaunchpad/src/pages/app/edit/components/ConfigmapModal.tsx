@@ -57,15 +57,22 @@ const ConfigmapModal = ({
 
   return (
     <>
-      <Modal isOpen onClose={closeCb}>
+      <Modal isOpen onClose={closeCb} lockFocusAcrossFrames={false}>
         <ModalOverlay />
-        <ModalContent maxH={'90vh'} maxW={'90vw'} minW={'600px'} w={'auto'}>
-          <ModalHeader>{t(textMap[type].title)} ConfigMap</ModalHeader>
+        <ModalContent maxH={'90vh'} maxW={'90vw'} minW={'530px'} w={'auto'}>
+          <ModalHeader>
+            {t(textMap[type].title)}
+            {t('ConfigMap Tip')}
+          </ModalHeader>
           <ModalCloseButton />
           <ModalBody>
             <MyFormControl showError errorText={errors.mountPath?.message}>
-              <Box mb={1}>{t('filename')}</Box>
+              <Box mb={'8px'} fontSize={'14px'} fontWeight={500} color={'grayModern.900'}>
+                {' '}
+                {t('filename')}
+              </Box>
               <Input
+                width={'100%'}
                 placeholder={`${t('File Name')}: /etc/kubernetes/admin.conf`}
                 {...register('mountPath', {
                   required: t('Filename can not empty') || 'Filename can not empty',
@@ -83,7 +90,9 @@ const ConfigmapModal = ({
               />
             </MyFormControl>
             <FormControl isInvalid={!!errors.value}>
-              <Box mb={1}>{t('file value')} </Box>
+              <Box mb={'8px'} fontSize={'14px'} fontWeight={500} color={'grayModern.900'}>
+                {t('file value')}{' '}
+              </Box>
               <Textarea
                 rows={10}
                 resize={'both'}
@@ -95,7 +104,7 @@ const ConfigmapModal = ({
           </ModalBody>
 
           <ModalFooter>
-            <Button w={'110px'} variant={'primary'} onClick={handleSubmit(successCb)}>
+            <Button w={'88px'} onClick={handleSubmit(successCb)}>
               {t('Confirm')}
             </Button>
           </ModalFooter>

@@ -1,4 +1,4 @@
-import { Checkbox, Flex, Link, Text, TextProps } from '@chakra-ui/react';
+import { Checkbox, Flex, Link, Text } from '@chakra-ui/react';
 import { useTranslation } from 'next-i18next';
 import { useState } from 'react';
 
@@ -12,7 +12,6 @@ const useProtocol = ({
   const { t, i18n } = useTranslation();
   const [isAgree, setIsAgree] = useState(false);
   const [isInvalid, setIsInvalid] = useState(false);
-
   const Protocol = () => (
     <Flex
       className="protocol"
@@ -35,7 +34,7 @@ const useProtocol = ({
         }}
       />
       <Text fontStyle="normal" fontWeight="400" fontSize="12px" lineHeight="140%" color="#FFFFFF">
-        {t('agree policy')}
+        {t('common:agree_policy')}
         <Link
           href={service_protocol}
           _hover={{
@@ -44,9 +43,9 @@ const useProtocol = ({
           }}
           px="4px"
         >
-          {t('Service Agreement')}
+          {t('common:service_agreement')}
         </Link>
-        {t('and')}
+        {t('common:and')}
         <Link
           href={private_protocol}
           _hover={{
@@ -55,7 +54,7 @@ const useProtocol = ({
           }}
           px="4px"
         >
-          {t('Privacy Policy')}
+          {t('common:privacy_policy')}
         </Link>
       </Text>
     </Flex>

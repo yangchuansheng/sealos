@@ -1,35 +1,57 @@
-import React, { useState, useCallback } from 'react';
+import { delAppByName } from '@/api/app';
+import MyIcon from '@/components/Icon';
+import { TAppSource, TAppSourceType } from '@/types/app';
 import {
+  Box,
+  Button,
+  Flex,
+  Input,
   Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalFooter,
   ModalBody,
   ModalCloseButton,
-  Input,
-  Box,
-  Button
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalOverlay
 } from '@chakra-ui/react';
-import { delAppByName } from '@/api/app';
-import { useToast } from '@/hooks/useToast';
-import { useRouter } from 'next/router';
+import { useMessage } from '@sealos/ui';
 import { useTranslation } from 'next-i18next';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { sealosApp } from 'sealos-desktop-sdk/app';
+
+enum Page {
+  REMINDER = 'REMINDER',
+  DELETION_WARNING = 'DELETION_WARNING'
+}
 
 const DelModal = ({
   appName,
   onClose,
-  onSuccess
+  onSuccess,
+  source
 }: {
   appName: string;
   onClose: () => void;
   onSuccess: () => void;
+  source?: TAppSource;
 }) => {
   const { t } = useTranslation();
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
-  const { toast } = useToast();
-  const router = useRouter();
+  const { message: toast } = useMessage();
+  const [activePage, setActivePage] = useState<Page>(Page.REMINDER);
+  const pageManuallyChangedRef = useRef(false);
+
+  useEffect(() => {
+    if (!pageManuallyChangedRef.current) {
+      source?.hasSource ? setActivePage(Page.REMINDER) : setActivePage(Page.DELETION_WARNING);
+    }
+  }, [source]);
+
+  const deleteTypeTipMap: Record<TAppSourceType, string> = {
+    app_store: t('delete_template_app_tip'),
+    sealaf: t('delete_sealaf_app_tip')
+  };
 
   const handleDelApp = useCallback(async () => {
     try {
@@ -51,46 +73,94 @@ const DelModal = ({
     setLoading(false);
   }, [appName, toast, t, onSuccess, onClose]);
 
+  const openTemplateApp = () => {
+    if (!source?.hasSource) return;
+    if (source?.sourceType === 'app_store') {
+      sealosApp.runEvents('openDesktopApp', {
+        appKey: 'system-template',
+        pathname: '/instance',
+        query: { instanceName: source?.sourceName }
+      });
+    }
+    if (source?.sourceType === 'sealaf') {
+      sealosApp.runEvents('openDesktopApp', {
+        appKey: 'system-sealaf',
+        pathname: '/',
+        query: { instanceName: source?.sourceName }
+      });
+    }
+    onClose();
+  };
+
   return (
-    <Modal isOpen onClose={onClose}>
+    <Modal isOpen onClose={onClose} lockFocusAcrossFrames={false}>
       <ModalOverlay />
       <ModalContent>
-        <ModalHeader>{t('Deletion warning')} </ModalHeader>
+        <ModalHeader>
+          <Flex alignItems={'center'} gap={'10px'}>
+            <MyIcon name="warning" />
+            {activePage === Page.REMINDER ? t('Remind') : t('Deletion warning')}
+          </Flex>
+        </ModalHeader>
         <ModalCloseButton />
-        <ModalBody pb={4}>
-          <Box color={'myGray.600'}>
-            {t(
-              'Are you sure you want to delete this application? If you proceed, all data for this project will be deleted.'
-            )}
-            <Box my={3}>
-              {t('Please enter')}{' '}
-              <Box as={'span'} color={'myGray.900'} fontWeight={'bold'} userSelect={'all'}>
-                {appName}
-              </Box>{' '}
-              {t('To Confirm')}
-            </Box>
-          </Box>
 
-          <Input
-            placeholder={`请输入：${appName}`}
-            value={inputValue}
-            bg={'myWhite.300'}
-            onChange={(e) => setInputValue(e.target.value)}
-          />
+        <ModalBody>
+          <Box color={'myGray.600'}>
+            {activePage === Page.REMINDER && source?.sourceType
+              ? deleteTypeTipMap[source?.sourceType]
+              : t(
+                  'Are you sure you want to delete this application? If you proceed, all data for this project will be deleted'
+                )}
+            {activePage === Page.DELETION_WARNING && (
+              <Box my={3}>
+                {t('Please enter')}
+                <Box
+                  as={'span'}
+                  px={'4px'}
+                  color={'myGray.900'}
+                  fontWeight={'bold'}
+                  userSelect={'all'}
+                >
+                  {appName}
+                </Box>
+                {t('To Confirm')}
+              </Box>
+            )}
+          </Box>
+          {activePage === Page.DELETION_WARNING && (
+            <Input
+              placeholder={t('please enter app name', { appName }) || ''}
+              value={inputValue}
+              bg={'myWhite.300'}
+              onChange={(e) => setInputValue(e.target.value)}
+            />
+          )}
         </ModalBody>
+
         <ModalFooter>
-          <Button onClick={onClose} variant={'base'}>
+          <Button width={'64px'} onClick={onClose} variant={'outline'}>
             {t('Cancel')}
           </Button>
+          {activePage === Page.REMINDER && source?.sourceType !== 'sealaf' && (
+            <Button
+              ml={3}
+              variant={'outline'}
+              onClick={() => {
+                setActivePage(Page.DELETION_WARNING);
+                pageManuallyChangedRef.current = true;
+              }}
+            >
+              {t('Delete anyway')}
+            </Button>
+          )}
           <Button
-            colorScheme="red"
             ml={3}
             variant={'solid'}
-            isDisabled={inputValue !== appName}
+            isDisabled={activePage === Page.DELETION_WARNING && inputValue !== appName}
             isLoading={loading}
-            onClick={handleDelApp}
+            onClick={activePage === Page.REMINDER ? openTemplateApp : handleDelApp}
           >
-            {t('Confirm deletion')}
+            {activePage === Page.REMINDER ? t('confirm_to_go') : t('Delete')}
           </Button>
         </ModalFooter>
       </ModalContent>

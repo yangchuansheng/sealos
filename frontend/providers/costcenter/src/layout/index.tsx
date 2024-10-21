@@ -2,7 +2,6 @@ import useSessionStore from '@/stores/session';
 import { Box, Flex, Link, Text } from '@chakra-ui/react';
 import { useEffect, useState } from 'react';
 import { createSealosApp, sealosApp } from 'sealos-desktop-sdk/app';
-import styles from './index.module.scss';
 import SideBar from './sidebar';
 
 export default function Layout({ children }: any) {
@@ -35,10 +34,9 @@ export default function Layout({ children }: any) {
       w="100vw"
       h="100vh"
       position="relative"
-      background="frostyNightfall.200"
+      background={'grayModern.100'}
       pt={'4px'}
       pb="10px"
-      backdropFilter="blur(150px)"
       alignItems={'center'}
       justifyContent={'center'}
     >

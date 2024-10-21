@@ -1,21 +1,25 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+import { authSession } from '@/services/backend/auth';
 import { getK8s } from '@/services/backend/kubernetes';
 import { jsonRes } from '@/services/backend/response';
-import { authSession } from '@/services/backend/auth';
+import { UserQuotaItemType } from '@/types/user';
+import type { NextApiRequest, NextApiResponse } from 'next';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     // source price
-    const { getUserQuota, getUserBalance } = await getK8s({
+    const { getUserQuota } = await getK8s({
       kubeconfig: await authSession(req.headers)
     });
 
-    const [quota, balance] = await Promise.all([getUserQuota(), getUserBalance()]);
+    const quota = await getUserQuota();
+    const gpuEnabled = global.AppConfig.common.gpuEnabled;
+    const filteredQuota = gpuEnabled ? quota : quota.filter((item) => item.type !== 'gpu');
 
-    jsonRes(res, {
+    jsonRes<{
+      quota: UserQuotaItemType[];
+    }>(res, {
       data: {
-        quota,
-        balance
+        quota: filteredQuota
       }
     });
   } catch (error) {

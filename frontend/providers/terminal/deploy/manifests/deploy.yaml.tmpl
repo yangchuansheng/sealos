@@ -37,8 +37,8 @@ spec:
         - name: terminal-frontend
           resources:
             limits:
-              cpu: 100m
-              memory: 500Mi
+              cpu: 2000m
+              memory: 2048Mi
             requests:
               cpu: 10m
               memory: 128Mi
@@ -54,6 +54,8 @@ spec:
               value: {{ .ttydImage }}
             - name: SITE
               value: {{ .cloudDomain }}
+            - name: KEEPALIVED
+              value: {{ .keepalived }}
           # do not modify this image, it is used for CI/CD
           image: ghcr.io/labring/sealos-terminal-frontend:latest
           imagePullPolicy: Always
@@ -61,6 +63,18 @@ spec:
             - name: terminal-frontend-volume
               mountPath: /config.yaml
               subPath: config.yaml
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: "app"
+                  operator: In
+                  values:
+                  - terminal-frontend
+              topologyKey: "kubernetes.io/hostname"
       volumes:
         - name: terminal-frontend-volume
           configMap:

@@ -3,6 +3,13 @@ import { cpuFormatToM, memoryFormatToMi } from '@/utils/tools';
 import * as k8s from '@kubernetes/client-node';
 import * as yaml from 'js-yaml';
 
+// Load default kc
+export function K8sApiDefault(): k8s.KubeConfig {
+  const kc = new k8s.KubeConfig();
+  kc.loadFromDefault();
+  return kc;
+}
+
 export function CheckIsInCluster(): [boolean, string] {
   if (
     process.env.KUBERNETES_SERVICE_HOST !== undefined &&
@@ -25,7 +32,7 @@ export function K8sApi(config = ''): k8s.KubeConfig {
 
   const cluster = kc.getCurrentCluster();
 
-  if (cluster !== null) {
+  if (cluster !== null && process.env.NODE_ENV !== 'development') {
     let server: k8s.Cluster;
 
     const [inCluster, hosts] = CheckIsInCluster();
@@ -89,12 +96,11 @@ export async function createYaml(
     for (const spec of created) {
       try {
         console.log('delete:', spec.kind);
-        client.delete(spec);
+        await client.delete(spec);
       } catch (error) {
-        error;
+        // console.log('delete error', spec.kind);
       }
     }
-    // console.error(error, '<=create error')
     return Promise.reject(error);
   }
   return created;
@@ -122,13 +128,14 @@ export async function updateYaml(
       created.push(response.body);
     }
   } catch (error: any) {
+    console.log('update error');
     /* delete success specs */
     for (const spec of validSpecs) {
       try {
         console.log('delete:', spec.kind);
         await client.delete(spec);
       } catch (error) {
-        error;
+        // console.log('delete error', spec.kind);
       }
     }
     if (error.body.reason === 'AlreadyExists' && canCreate) {
@@ -167,20 +174,19 @@ export async function replaceYaml(
         }
       });
       succeed.push(response.body);
-    } catch (e: any) {
-      // console.error(e?.body || e, "<=replace error")
+    } catch (error: any) {
+      console.log('replace error:', error);
       // no yaml, create it
-      if (e?.body?.code && +e?.body?.code === 404) {
+      if (error?.body?.code && +error?.body?.code === 404) {
         try {
-          console.log('create yaml: ', spec.kind);
+          console.log('create yaml', spec.kind);
           const response = await client.create(spec);
           succeed.push(response.body);
         } catch (error: any) {
-          // console.error(error, '<=create error')
           return Promise.reject(error);
         }
       } else {
-        return Promise.reject(e);
+        return Promise.reject(error);
       }
     }
   }
@@ -197,7 +203,7 @@ export async function delYaml(kc: k8s.KubeConfig, specs: k8s.KubernetesObject[])
       client.delete(spec);
     }
   } catch (error: any) {
-    // console.error(error, '<=create error')
+    // console.log('delete error', error);
     return Promise.reject(error);
   }
 }

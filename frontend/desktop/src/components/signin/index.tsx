@@ -1,53 +1,59 @@
-import { uploadConvertData } from '@/api/platform';
-import useAuthList from '@/components/signin/auth/useAuthList';
+import AuthList from '@/components/signin/auth/AuthList';
 import useCustomError from '@/components/signin/auth/useCustomError';
 import Language from '@/components/signin/auth/useLanguage';
 import usePassword from '@/components/signin/auth/usePassword';
 import useProtocol from '@/components/signin/auth/useProtocol';
 import useSms from '@/components/signin/auth/useSms';
-import request from '@/services/request';
+import { useConfigStore } from '@/stores/config';
 import useSessionStore from '@/stores/session';
-import { ApiResp, LoginType, SystemEnv } from '@/types';
+import { LoginType } from '@/types';
 import {
   Box,
   Button,
   Flex,
-  Img,
   Tab,
   TabIndicator,
   TabList,
   Tabs,
+  Text,
   useDisclosure
 } from '@chakra-ui/react';
-import { useQuery } from '@tanstack/react-query';
+import { Turnstile, TurnstileInstance } from '@marsidev/react-turnstile';
+import { useQueryClient } from '@tanstack/react-query';
 import { debounce } from 'lodash';
 import { useTranslation } from 'next-i18next';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import sealosTitle from 'public/images/sealos-title.png';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import useWechat from './auth/useWechat';
 
 export default function SigninComponent() {
-  const { data: platformEnv } = useQuery(['getPlatformEnv'], () =>
-    request<any, ApiResp<SystemEnv>>('/api/platform/getEnv')
-  );
-
-  const {
-    service_protocol = '',
-    private_protocol = '',
-    needPassword = false,
-    needSms = false
-  } = platformEnv?.data || {};
-
-  const needTabs = needPassword && needSms;
-
+  const conf = useConfigStore();
+  const hasBaiduToken = conf.authConfig?.hasBaiduToken;
+  const needPassword = conf.authConfig?.idp.password?.enabled;
+  const needSms = conf.authConfig?.idp.sms?.enabled;
+  const needTabsCount =
+    0 +
+    (conf.authConfig?.idp.password?.enabled ? 1 : 0) +
+    (conf.authConfig?.idp.sms?.enabled ? 1 : 0);
   const disclosure = useDisclosure();
   const { t, i18n } = useTranslation();
   const [tabIndex, setTabIndex] = useState<LoginType>(LoginType.NONE);
 
   const { ErrorComponent, showError } = useCustomError();
-
-  const { Protocol, isAgree, setIsInvalid } = useProtocol({ service_protocol, private_protocol });
+  let protocol_data: Parameters<typeof useProtocol>[0];
+  if (['zh', 'zh-Hans'].includes(i18n.language))
+    protocol_data = {
+      service_protocol: conf.layoutConfig?.protocol?.serviceProtocol.zh as string,
+      private_protocol: conf.layoutConfig?.protocol?.privateProtocol.zh as string
+    };
+  else
+    protocol_data = {
+      service_protocol: conf.layoutConfig?.protocol?.serviceProtocol.en as string,
+      private_protocol: conf.layoutConfig?.protocol?.privateProtocol.en as string
+    };
+  const { Protocol, isAgree, setIsInvalid } = useProtocol(protocol_data!);
+  const { WechatComponent, login: wechatSubmit } = useWechat();
   const { SmsModal, login: smsSubmit, isLoading: smsLoading } = useSms({ showError });
   const {
     PasswordComponent,
@@ -57,27 +63,54 @@ export default function SigninComponent() {
   } = usePassword({ showError });
   const isLoading = useMemo(() => passwordLoading || smsLoading, [passwordLoading, smsLoading]);
   const isSignIn = useSessionStore((s) => s.isUserLogin);
+  const delSession = useSessionStore((s) => s.delSession);
+  const setToken = useSessionStore((s) => s.setToken);
   const router = useRouter();
+  const queryClient = useQueryClient();
   useEffect(() => {
     if (isSignIn()) {
       router.replace('/');
+    } else {
+      queryClient.clear();
+      delSession();
+      setToken('');
     }
   }, []);
-  const { AuthList } = useAuthList();
-
+  const turnstileRef = useRef<TurnstileInstance>(null);
   const loginConfig = useMemo(() => {
     return {
       [LoginType.SMS]: {
         login: smsSubmit,
-        component: <SmsModal />
+        component: (
+          <SmsModal
+            onAfterGetCode={() => {
+              turnstileRef.current?.reset();
+            }}
+            getCfToken={() => {
+              return turnstileRef.current?.getResponse();
+            }}
+          />
+        )
       },
       [LoginType.PASSWORD]: {
         login: passwordSubmit,
         component: <PasswordComponent />
       },
+      [LoginType.WeChat]: {
+        login: wechatSubmit,
+        component: <WechatComponent />
+      },
       [LoginType.NONE]: null
     };
-  }, [PasswordComponent, SmsModal, passwordSubmit, smsSubmit]);
+  }, [
+    PasswordComponent,
+    SmsModal,
+    WechatComponent,
+    passwordSubmit,
+    smsSubmit,
+    wechatSubmit,
+    turnstileRef.current
+  ]);
 
   useEffect(() => {
     setTabIndex(needSms ? LoginType.SMS : needPassword ? LoginType.PASSWORD : LoginType.NONE);
@@ -88,38 +121,48 @@ export default function SigninComponent() {
     [loginConfig, tabIndex]
   );
 
-  const handleLogin = debounce(() => {
-    const selectedConfig = loginConfig[tabIndex];
-    if (isAgree && selectedConfig) {
-      const { login } = selectedConfig;
-      login();
-      uploadConvertData([3]).then((res) => {
-        console.log(res);
-      });
+  const isAgreeCb = () => {
+    if (isAgree) {
+      return true;
     } else {
       setIsInvalid(true);
-      showError(t('Read and agree'));
+      showError(t('common:read_and_agree'));
+      return false;
     }
+  };
+  const handleLogin = debounce(() => {
+    const selectedConfig = loginConfig[tabIndex];
+    if (!isAgreeCb() || !selectedConfig) return;
+    selectedConfig.login();
   }, 500);
-
   return (
     <Box
       position={'relative'}
       overflow={'hidden'}
       w="100vw"
       h="100vh"
-      backgroundImage={'url(/images/background.svg)'}
+      backgroundImage={`url(${conf.layoutConfig?.backgroundImage || ''})`}
       backgroundRepeat={'no-repeat'}
       backgroundSize={'cover'}
     >
       <Head>
-        <title>sealos Cloud</title>
-        <meta name="description" content="sealos cloud dashboard" />
+        <title>{conf.layoutConfig?.meta.title || ''}</title>
+        <meta name="description" content={conf.layoutConfig?.meta.description} />
       </Head>
+
       <Flex h="full" w="full" flexDir={'column'} justifyContent={'center'} alignItems={'center'}>
-        <Box mb="36px">
-          <Img src={sealosTitle.src} w="135px"></Img>
-        </Box>
+        {needTabsCount > 0 && (
+          <Box mb="36px">
+            <Text
+              color={'#FFF'}
+              fontSize={'44px'}
+              fontWeight={700}
+              textShadow={'0px 2px 6px rgba(0, 0, 0, 0.30)'}
+            >
+              {conf.layoutConfig?.title}
+            </Text>
+          </Box>
+        )}
         <Flex
           p="30px 48px"
           boxShadow="0px 15px 20px rgba(0, 0, 0, 0.2)"
@@ -132,10 +175,15 @@ export default function SigninComponent() {
         >
           <ErrorComponent />
 
-          {pageState === 0 && needTabs && (
+          {pageState === 0 && needTabsCount > 1 && (
             <Tabs
               index={tabIndex}
-              onChange={(idx) => setTabIndex(idx)}
+              onChange={(idx) => {
+                if (idx === LoginType.WeChat) {
+                  wechatSubmit();
+                }
+                setTabIndex(idx);
+              }}
               variant="unstyled"
               p={'0'}
               width={'full'}
@@ -150,42 +198,76 @@ export default function SigninComponent() {
                 gap={'20px'}
               >
                 <Tab px="0" _selected={{ color: 'white' }}>
-                  {t('Verification Code Login')}
+                  {t('common:verification_code_login')}
                 </Tab>
                 <Tab px="0" _selected={{ color: 'white' }}>
-                  {t('Password Login')}
+                  {t('common:password_login')}
                 </Tab>
+                {conf.authConfig?.idp.wechat.enabled && (
+                  <Tab px="0" _selected={{ color: 'white' }}>
+                    {t('common:official_account_login')}
+                  </Tab>
+                )}
               </TabList>
               <TabIndicator mt="-2px" height="2px" bg="#FFFFFF" borderRadius="1px" />
             </Tabs>
           )}
 
           {LoginComponent}
-
-          <Protocol />
-
-          <Button
-            variant={'unstyled'}
-            background="linear-gradient(90deg, #000000 0%, rgba(36, 40, 44, 0.9) 98.29%)"
-            boxShadow="0px 4px 4px rgba(0, 0, 0, 0.25)"
-            color="#fff"
-            display={'flex'}
-            justifyContent={'center'}
-            alignItems={'center'}
-            type="submit"
-            _hover={{
-              opacity: '0.85'
-            }}
-            width="266px"
-            minH="42px"
-            mb="14px"
-            borderRadius="4px"
-            p="10px"
-            onClick={handleLogin}
-          >
-            {isLoading ? (t('Loading') || 'Loading') + '...' : t('Log In') || 'Log In'}
-          </Button>
-          <AuthList />
+          {/* footer */}
+          {tabIndex !== LoginType.WeChat &&
+            (needTabsCount > 0 ? (
+              <>
+                <Protocol />
+                {!!conf.commonConfig?.cfSiteKey && (
+                  <Turnstile
+                    options={{
+                      size: 'invisible'
+                    }}
+                    ref={turnstileRef}
+                    siteKey={conf.commonConfig?.cfSiteKey}
+                  />
+                )}
+                <Button
+                  variant={'unstyled'}
+                  background="linear-gradient(90deg, #000000 0%, rgba(36, 40, 44, 0.9) 98.29%)"
+                  boxShadow="0px 4px 4px rgba(0, 0, 0, 0.25)"
+                  color="#fff"
+                  display={'flex'}
+                  justifyContent={'center'}
+                  alignItems={'center'}
+                  type="submit"
+                  _hover={{
+                    opacity: '0.85'
+                  }}
+                  width="266px"
+                  minH="42px"
+                  mb="14px"
+                  borderRadius="4px"
+                  p="10px"
+                  onClick={handleLogin}
+                >
+                  {isLoading
+                    ? (t('common:loading') || 'Loading') + '...'
+                    : t('common:log_in') || 'Log In'}
+                </Button>
+                <AuthList isAgreeCb={isAgreeCb} />
+              </>
+            ) : (
+              <>
+                <Text
+                  color={'#FFF'}
+                  fontSize={'36px'}
+                  fontWeight={700}
+                  mb={'24px'}
+                  textShadow={'0px 2px 6px rgba(0, 0, 0, 0.30)'}
+                >
+                  {conf.layoutConfig?.title}
+                </Text>
+                <AuthList zeroTab isAgreeCb={isAgreeCb} />
+                <Protocol />
+              </>
+            ))}
         </Flex>
       </Flex>
       <Language disclosure={disclosure} i18n={i18n} />

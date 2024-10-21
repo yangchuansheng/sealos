@@ -1,8 +1,6 @@
-import { useGlobalStore } from '@/store/global';
-import { Box, Grid } from '@chakra-ui/react';
+import { Box, Grid, useBreakpointValue } from '@chakra-ui/react';
 import { useRouter } from 'next/router';
-import { useMemo } from 'react';
-import AppMenu from './appmenu';
+import dynamic from 'next/dynamic';
 
 const ShowLayoutRoute: Record<string, boolean> = {
   '/': true,
@@ -10,21 +8,25 @@ const ShowLayoutRoute: Record<string, boolean> = {
   '/deploy': true
 };
 
+const AppMenu = dynamic(() => import('./appmenu'), {
+  ssr: false,
+  loading: () => <div></div>
+});
+
 export default function Layout({ children }: { children: JSX.Element }) {
-  const { screenWidth } = useGlobalStore();
   const router = useRouter();
-  const isMobile = useMemo(() => screenWidth < 1024, [screenWidth]);
+  const firstColumnWidth = useBreakpointValue({ base: '230px', xl: '270px' });
 
   return (
     <>
       {ShowLayoutRoute[router.pathname] ? (
         <Grid
-          templateColumns={isMobile ? '76px 1fr' : '270px 1fr'}
+          templateColumns={`${firstColumnWidth} 1fr`}
           h="100vh"
           overflow={'hidden'}
-          background={'rgba(150, 153, 180, 0.15)'}
+          background={'#F4F4F7'}
         >
-          <AppMenu isMobile={isMobile} />
+          <AppMenu />
           <>{children}</>
         </Grid>
       ) : (

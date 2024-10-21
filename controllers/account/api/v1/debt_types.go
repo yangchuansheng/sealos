@@ -51,20 +51,30 @@ var DefaultDebtConfig = map[DebtStatusType]int64{
 const DebtNamespaceAnnoStatusKey = "debt.sealos/status"
 
 const (
-	NormalDebtNamespaceAnnoStatus  = "Normal"
-	SuspendDebtNamespaceAnnoStatus = "Suspend"
-	ResumeDebtNamespaceAnnoStatus  = "Resume"
+	NormalDebtNamespaceAnnoStatus           = "Normal"
+	SuspendDebtNamespaceAnnoStatus          = "Suspend"
+	ResumeDebtNamespaceAnnoStatus           = "Resume"
+	TerminateSuspendDebtNamespaceAnnoStatus = "TerminateSuspend"
 )
 
 // DebtSpec defines the desired state of Debt
 type DebtSpec struct {
 	UserName string `json:"userName,omitempty"`
+	UserID   string `json:"userID,omitempty"`
 }
 
 // DebtStatus defines the observed state of Debt
 type DebtStatus struct {
-	LastUpdateTimestamp int64          `json:"lastUpdateTimestamp,omitempty"`
-	AccountDebtStatus   DebtStatusType `json:"status,omitempty"`
+	LastUpdateTimestamp int64              `json:"lastUpdateTimestamp,omitempty"`
+	DebtStatusRecords   []DebtStatusRecord `json:"debtStatusRecords,omitempty"`
+	AccountDebtStatus   DebtStatusType     `json:"status,omitempty"`
+}
+
+// DebtStatusRecord defines the observed state of Debt
+type DebtStatusRecord struct {
+	LastStatus    DebtStatusType `json:"lastDebtStatus,omitempty"`
+	CurrentStatus DebtStatusType `json:"currentStatus,omitempty"`
+	UpdateTime    metav1.Time    `json:"updateTime,omitempty"`
 }
 
 //+kubebuilder:object:root=true

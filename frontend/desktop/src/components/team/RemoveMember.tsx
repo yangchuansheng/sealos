@@ -19,32 +19,30 @@ import { CancelIcon, DeleteIcon } from '@sealos/ui';
 import { removeMemberRequest } from '@/api/namespace';
 import { useCustomToast } from '@/hooks/useCustomToast';
 import { ApiResp } from '@/types';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from 'next-i18next';
+
 export default function RemoveMember({
   ns_uid,
   status,
   k8s_username: tK8s_username,
-  userId: tUserId,
+  targetUserCrUid,
   ...props
 }: {
-  userId: string;
+  targetUserCrUid: string;
   ns_uid: string;
   k8s_username: string;
   status: InvitedStatus;
 } & Parameters<typeof Button>[0]) {
   const { onOpen, isOpen, onClose } = useDisclosure();
   const session = useSessionStore((s) => s.session);
-  const selfUserId = session.user.userId;
+  const selfUserCrUid = session?.user.userCrUid;
   const queryClient = useQueryClient();
 
   const { toast } = useCustomToast({ status: 'error' });
   const mutation = useMutation({
     mutationFn: removeMemberRequest,
     onSuccess() {
-      queryClient.invalidateQueries({
-        queryKey: ['ns-detail'],
-        exact: false
-      });
+      queryClient.invalidateQueries();
       onClose();
     },
     onError(error) {
@@ -52,15 +50,19 @@ export default function RemoveMember({
     }
   });
   const submit = () => {
-    mutation.mutate({ ns_uid, tUserId, tK8s_username });
+    mutation.mutate({ ns_uid, targetUserCrUid });
   };
   const { t, i18n } = useTranslation();
   const removeKey =
     status === InvitedStatus.Inviting
-      ? t('Cancel')
-      : selfUserId === tUserId
-      ? t('Quit')
-      : t('Remove');
+      ? t('common:cancel')
+      : selfUserCrUid === targetUserCrUid
+      ? t('common:quit')
+      : t('common:remove');
+  const removeTips =
+    selfUserCrUid === targetUserCrUid
+      ? t('common:quit_workspace_tips')
+      : t('common:remove_member_tips');
   return (
     <>
       <Button
@@ -90,13 +92,15 @@ export default function RemoveMember({
           backdropFilter="blur(150px)"
           p="24px"
         >
-          <ModalCloseButton right={'24px'} top="24px" p="0" />
-          <ModalHeader p="0">{t('Warning')}</ModalHeader>
+          <ModalCloseButton right={'24px'} top="16px" p="0" />
+          <ModalHeader bg={'white'} border={'none'} p="0">
+            {t('common:warning')}
+          </ModalHeader>
           {mutation.isLoading ? (
             <Spinner mx="auto" />
           ) : (
             <ModalBody h="100%" w="100%" p="0" mt="22px">
-              <Text>{t('Remove Member Tips')}</Text>
+              <Text>{removeTips}</Text>
               <Flex mt="37px" justify={'flex-end'} gap={'12px'}>
                 <Button
                   variant={'unstyled'}
@@ -114,7 +118,7 @@ export default function RemoveMember({
                     onClose();
                   }}
                 >
-                  {t('Cancel')}
+                  {t('common:cancel')}
                 </Button>
                 <Button
                   variant={'unstyled'}
@@ -132,7 +136,7 @@ export default function RemoveMember({
                     submit();
                   }}
                 >
-                  {t('Confirm')}
+                  {t('common:confirm')}
                 </Button>
               </Flex>
             </ModalBody>

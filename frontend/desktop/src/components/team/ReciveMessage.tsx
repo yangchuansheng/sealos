@@ -16,7 +16,7 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ROLE_LIST, teamMessageDto } from '@/types/team';
 import { reciveAction, verifyInviteRequest } from '@/api/namespace';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from 'next-i18next';
 export default function ReciveMessage({
   message,
   CloseTipHandler,
@@ -39,7 +39,7 @@ export default function ReciveMessage({
   });
   const { t, i18n } = useTranslation();
   const inviteTips = ({ managerName, teamName, role }: Record<string, string>) =>
-    t('Recive Tips', {
+    t('common:receive_tips', {
       managerName,
       teamName,
       role
@@ -80,7 +80,7 @@ export default function ReciveMessage({
           ml="18px"
           mr="16px"
         >
-          {t('Handle')}
+          {t('common:handle')}
         </Text>
         <CloseButton
           onClick={() => {
@@ -100,8 +100,10 @@ export default function ReciveMessage({
           backdropFilter="blur(150px)"
           p="24px"
         >
-          <ModalCloseButton right={'24px'} top="24px" p="0" color={'#24282C'} />
-          <ModalHeader p="0">{t('Accept Invitation')}</ModalHeader>
+          <ModalCloseButton right={'24px'} top="16px" p="0" color={'#24282C'} />
+          <ModalHeader bg={'white'} border={'none'} p="0">
+            {t('common:accept_invitation')}
+          </ModalHeader>
           {mutation.isLoading ? (
             <Spinner mx={'auto'} />
           ) : (
@@ -131,7 +133,7 @@ export default function ReciveMessage({
                       submit(reciveAction.Reject);
                     }}
                   >
-                    {t('Reject')}
+                    {t('common:reject')}
                   </Button>
                   <Button
                     variant={'unstyled'}
@@ -149,7 +151,7 @@ export default function ReciveMessage({
                       submit(reciveAction.Accepte);
                     }}
                   >
-                    {t('Accept')}
+                    {t('common:accept')}
                   </Button>
                 </Flex>
               </ModalBody>

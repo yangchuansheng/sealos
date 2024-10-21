@@ -4,10 +4,18 @@ set -e
 cloudDomain="127.0.0.1.nip.io"
 cloudPort=""
 mongodbUri=""
+cockroachdbUri=""
+cockroachdbLocalUri=""
+cockroachdbGlobalUri=""
+localRegionUID=""
 
 tlsCrtPlaceholder="<tls-crt-placeholder>"
-tlsKeyPlaceholder="<tls-key-placeholder>"
+acmednsSecretPlaceholder="<acmedns-secret-placeholder>"
+
 saltKey=""
+jwtInternal=""
+jwtRegional=""
+jwtGlobal=""
 
 function prepare {
   # source .env
@@ -22,23 +30,53 @@ function prepare {
   # gen mongodb uri
   gen_mongodbUri
 
+  # gen cockroachdb uri
+  gen_cockroachdbUri
+
   # gen saltKey if not set or not found in secret
   gen_saltKey
 
-  # mutate desktop config
-  mutate_desktop_config
+  # gen regionUID if not set or not found in secret
+  gen_regionUID
+
+  # gen jwt tokens
+  gen_jwt_tokens
 
   # create tls secret
   create_tls_secret
 }
 
+# Function to retry `kubectl apply -f` command until it succeeds or reaches a maximum number of attempts
+retry_kubectl_apply() {
+    local file_path=$1  # The path to the Kubernetes manifest file
+    local max_attempts=6  # Maximum number of attempts
+    local attempt=0  # Current attempt counter
+    local wait_seconds=10  # Seconds to wait before retrying
+
+    while [ $attempt -lt $max_attempts ]; do
+        # Attempt to execute the kubectl command
+        kubectl apply -f "$file_path" >> /dev/null && {
+            return 0  # Exit the function successfully
+        }
+        # If the command did not execute successfully, increase the attempt counter and report failure
+        attempt=$((attempt + 1))
+        # If the maximum number of attempts has been reached, stop retrying
+        if [ $attempt -eq $max_attempts ]; then
+            return 1  # Exit the function with failure
+        fi
+        # Wait for a specified time before retrying
+        sleep $wait_seconds
+    done
+}
+
+
 function gen_mongodbUri() {
   # if mongodbUri is empty then create mongodb and gen mongodb uri
   if [ -z "$mongodbUri" ]; then
     echo "no mongodb uri found, create mongodb and gen mongodb uri"
-    kubectl apply -f manifests/mongodb.yaml
+    retry_kubectl_apply "manifests/mongodb.yaml"
     echo "waiting for mongodb secret generated"
-    message="Waiting for MongoDB ready"
+    message="waiting for mongodb ready"
     # if there is no sealos-mongodb-conn-credential secret then wait for mongodb ready
     while [ -z "$(kubectl get secret -n sealos sealos-mongodb-conn-credential 2>/dev/null)" ]; do
       echo -ne "\r$message   \e[K"
@@ -56,31 +94,121 @@ function gen_mongodbUri() {
   fi
 }
 
+function gen_cockroachdbUri() {
+  if [ -z "$cockroachdbUri" ]; then
+    echo "no cockroachdb uri found, create cockroachdb and gen cockroachdb uri"
+    retry_kubectl_apply "manifests/cockroachdb.yaml"
+    message="waiting for cockroachdb ready"
+
+    NAMESPACE="sealos"
+    STATEFULSET_NAME="sealos-cockroachdb"
+
+    while : ; do
+        if kubectl get statefulset $STATEFULSET_NAME -n $NAMESPACE >/dev/null 2>&1; then
+            echo "cockroachdb statefulset is created."
+            break
+        else
+            sleep 10
+        fi
+    done
+
+    while : ; do
+      REPLICAS=$(kubectl get statefulset $STATEFULSET_NAME -n $NAMESPACE -o jsonpath='{.spec.replicas}')
+      READY_REPLICAS=$(kubectl get statefulset $STATEFULSET_NAME -n $NAMESPACE -o jsonpath='{.status.readyReplicas}')
+      if [ "$READY_REPLICAS" == "$REPLICAS" ]; then
+        echo -e "\rcockroachdb is ready."
+        break
+      else
+        echo -ne "\r$message    \e[K"
+        sleep 0.5
+        echo -ne "\r$message .  \e[K"
+        sleep 0.5
+        echo -ne "\r$message .. \e[K"
+        sleep 0.5
+        echo -ne "\r$message ...\e[K"
+        sleep 0.5
+      fi
+    done
+
+    echo "cockroachdb secret has been generated successfully."
+    chmod +x scripts/gen-cockroachdb-uri.sh
+    cockroachdbUri=$(scripts/gen-cockroachdb-uri.sh)
+  fi
+  cockroachdbLocalUri="$cockroachdbUri/local"
+  cockroachdbGlobalUri="$cockroachdbUri/global"
+}
+
+# TODO: use a better way to check saltKey
 function gen_saltKey() {
-    password_salt=$(kubectl get secret desktop-frontend-secret -n sealos -o jsonpath="{.data.password_salt}" 2>/dev/null || true)
+    password_salt=$(kubectl get configmap desktop-frontend-config -n sealos -o jsonpath='{.data.config\.yaml}' | grep "salt:" | awk '{print $2}' 2>/dev/null | tr -d '"' || true)
     if [[ -z "$password_salt" ]]; then
-        saltKey=$(tr -dc 'a-z0-9' </dev/urandom | head -c64 | base64 -w 0)
+        saltKey=$(tr -dc 'a-z0-9' </dev/urandom | head -c64)
     else
         saltKey=$password_salt
     fi
 }
 
-function mutate_desktop_config() {
-    # mutate etc/sealos/desktop-config.yaml by using mongodb uri and two random base64 string
-    sed -i -e "s;<your-mongodb-uri-base64>;$(echo -n "${mongodbUri}/sealos-auth?authSource=admin" | base64 -w 0);" etc/sealos/desktop-config.yaml
-    sed -i -e "s;<your-jwt-secret-base64>;$(tr -cd 'a-z0-9' </dev/urandom | head -c64 | base64 -w 0);" etc/sealos/desktop-config.yaml
-    sed -i -e "s;<your-password-salt-base64>;$saltKey;" etc/sealos/desktop-config.yaml
+# TODO: use a better way to check jwt tokens
+function gen_jwt_tokens() {
+    jwt_internal=$(kubectl get configmap desktop-frontend-config -n sealos -o jsonpath='{.data.config\.yaml}' | grep "internal:" | awk '{print $2}' 2>/dev/null | tr -d '"' || true)
+    if [[ -z "$jwt_internal" ]]; then
+        jwtInternal=$(tr -dc 'a-z0-9' </dev/urandom | head -c64)
+    else
+        jwtInternal=$jwt_internal
+    fi
+    jwt_regional=$(kubectl get configmap desktop-frontend-config -n sealos -o jsonpath='{.data.config\.yaml}' | grep "regional:" | awk '{print $2}' 2>/dev/null | tr -d '"' || true)
+    if [[ -z "$jwt_regional" ]]; then
+        jwtRegional=$(tr -dc 'a-z0-9' </dev/urandom | head -c64)
+    else
+        jwtRegional=$jwt_regional
+    fi
+    jwt_global=$(kubectl get configmap desktop-frontend-config -n sealos -o jsonpath='{.data.config\.yaml}' | grep "global:" | awk '{print $2}' 2>/dev/null | tr -d '"' || true)
+    if [[ -z "$jwt_global" ]]; then
+        jwtGlobal=$(tr -dc 'a-z0-9' </dev/urandom | head -c64)
+    else
+        jwtGlobal=$jwt_global
+    fi
+}
+
+function gen_regionUID(){
+    uid=$(kubectl get configmap desktop-frontend-config -n sealos -o jsonpath='{.data.config\.yaml}' | grep "regionUID:" | awk '{print $2}' 2>/dev/null | tr -d '"' || true)
+    if [[ -z "$uid" ]]; then
+        localRegionUID=$(uuidgen)
+    else
+        localRegionUID=$(echo -n "$uid")``
+    fi
 }
 
 function create_tls_secret {
-  if grep -q $tlsCrtPlaceholder manifests/tls-secret.yaml; then
+  if ! grep -q $tlsCrtPlaceholder manifests/tls-secret.yaml; then
+    echo "tls secret is already set"
+    kubectl apply -f manifests/tls-secret.yaml
+  elif ! grep -q $acmednsSecretPlaceholder manifests/acme-cert.yaml; then
+    echo "acme tls secret"
+    kubectl apply -f manifests/acme-cert.yaml
+    echo "acme tls cert has been created successfully."
+  else
     echo "mock tls secret"
     kubectl apply -f manifests/mock-cert.yaml
     echo "mock tls cert has been created successfully."
-  else
-    echo "tls secret is already set"
-    kubectl apply -f manifests/tls-secret.yaml
   fi
+}
+
+function sealos_run_desktop {
+    echo "run desktop frontend"
+    sealos run tars/frontend-desktop.tar \
+      --env cloudDomain=$cloudDomain \
+      --env cloudPort="$cloudPort" \
+      --env certSecretName="wildcard-cert" \
+      --env passwordEnabled="true" \
+      --env passwordSalt="$saltKey" \
+      --env regionUID="$localRegionUID" \
+      --env databaseMongodbURI="${mongodbUri}/sealos-auth?authSource=admin" \
+      --env databaseLocalCockroachdbURI="$cockroachdbLocalUri" \
+      --env databaseGlobalCockroachdbURI="$cockroachdbGlobalUri" \
+      --env jwtInternal="$jwtInternal" \
+      --env jwtRegional="$jwtRegional" \
+      --env jwtGlobal="$jwtGlobal"
 }
 
 function sealos_run_controller {
@@ -100,6 +228,9 @@ function sealos_run_controller {
   # run app controller
   sealos run tars/app.tar
 
+  # kubectl apply default desktop apps
+  retry_kubectl_apply "manifests/default_apps.yaml"
+
   # run resources monitoring controller
   sealos run tars/monitoring.tar \
   --env MONGO_URI="$mongodbUri" --env DEFAULT_NAMESPACE="resources-system"
@@ -109,16 +240,22 @@ function sealos_run_controller {
   --env MONGO_URI="$mongodbUri" \
   --env cloudDomain="$cloudDomain" \
   --env cloudPort="$cloudPort" \
-  --env DEFAULT_NAMESPACE="account-system"
+  --env DEFAULT_NAMESPACE="account-system" \
+  --env GLOBAL_COCKROACH_URI="$cockroachdbGlobalUri" \
+  --env LOCAL_COCKROACH_URI="$cockroachdbLocalUri" \
+  --env LOCAL_REGION="$localRegionUID" \
+  --env ACCOUNT_API_JWT_SECRET="$jwtInternal"
+
+  sealos run tars/account-service.tar --env cloudDomain="$cloudDomain" --env cloudPort="$cloudPort"
 
   # run license controller
-  sealos run tars/license.tar \
-  --env MONGO_URI="$mongodbUri"
+  sealos run tars/license.tar
 }
 
 
 function sealos_authorize {
-  sealos run tars/job-init.tar
+  sealos run tars/job-init.tar --env PASSWORD_SALT="$(echo -n "$saltKey")"
+  sealos run tars/job-heartbeat.tar
 
   # wait for admin user create
   echo "Waiting for admin user create"
@@ -126,22 +263,9 @@ function sealos_authorize {
   while [ -z "$(kubectl get ns ns-admin 2>/dev/null)" ]; do
     sleep 1
   done
-
-  kubectl apply -f manifests/free-license.yaml
 }
 
 function sealos_run_frontend {
-  echo "run desktop frontend"
-  sealos run tars/frontend-desktop.tar \
-    --env cloudDomain=$cloudDomain \
-    --env cloudPort="$cloudPort" \
-    --env certSecretName="wildcard-cert" \
-    --env passwordEnabled="true" \
-    --config-file etc/sealos/desktop-config.yaml
-
-  # sealos authorize !!must run after sealos_run_controller frontend-desktop.tar and before sealos_run_frontend
-  sealos_authorize
-
   echo "run applaunchpad frontend"
   sealos run tars/frontend-applaunchpad.tar \
   --env cloudDomain=$cloudDomain \
@@ -166,8 +290,9 @@ function sealos_run_frontend {
   --env cloudPort="$cloudPort" \
   --env certSecretName="wildcard-cert" \
   --env transferEnabled="true" \
-  --env rechargeEnabled="false"
-
+  --env rechargeEnabled="false" \
+  --env jwtInternal="$jwtInternal"
+ 
   echo "run template frontend"
   sealos run tars/frontend-template.tar \
   --env cloudDomain=$cloudDomain \
@@ -188,9 +313,11 @@ function sealos_run_frontend {
   --env cloudPort="$cloudPort" \
   --env certSecretName="wildcard-cert"
 
-
-  echo "run db monitoring"
+  echo "run database monitoring"
   sealos run tars/database-service.tar
+
+  echo "run launchpad monitoring"
+  sealos run tars/launchpad-service.tar
 }
 
 function resource_exists {
@@ -202,8 +329,15 @@ function install {
   # gen mongodb uri and others
   prepare
 
+  # sealos run desktop
+  sealos_run_desktop
+
   # sealos run controllers
   sealos_run_controller
+
+  # sealos authorize !!must run after sealos_run_controller frontend-desktop.tar and before sealos_run_frontend
+  # TODO fix sealos_authorize in controller/job/init
+  sealos_authorize
 
   # sealos run frontends
   sealos_run_frontend

@@ -1,31 +1,30 @@
-import { authSession } from '@/service/backend/auth';
-import { GetConfigMap } from '@/service/backend/kubernetes';
+import { makeAPIClientByHeader } from '@/service/backend/region';
 import { jsonRes } from '@/service/backend/response';
-import { enableRecharge } from '@/service/enabled';
 import type { NextApiRequest, NextApiResponse } from 'next';
+
 export default async function handler(req: NextApiRequest, resp: NextApiResponse) {
   try {
-    if (!enableRecharge) {
+    if (!global.AppConfig.costCenter.recharge.enabled) {
       throw new Error('recharge is not enabled');
     }
-    const kc = await authSession(req.headers);
+    const client = await makeAPIClientByHeader(req, resp);
+    if (!client) return null;
 
-    // get user account payment amount
-    const user = kc.getCurrentUser();
-    if (user === null) {
-      return jsonRes(resp, { code: 401, message: 'user null' });
-    }
-
-    const result = await GetConfigMap(kc, 'sealos', 'recharge-gift');
-    if (!result.body.data) {
-      return jsonRes(resp, { code: 404, message: 'not found' });
-    }
+    const response = await client.post<{
+      discount: {
+        defaultSteps: Record<string, number>;
+        firstRechargeDiscount: Record<string, number>;
+      };
+    }>('/account/v1alpha1/recharge-discount');
+    const data = response.data;
+    if (!data || response.status !== 200)
+      return jsonRes(resp, {
+        code: 404,
+        message: 'bonus is not found'
+      });
     return jsonRes(resp, {
       code: 200,
-      data: {
-        ratios: result.body.data.ratios,
-        steps: result.body.data.steps
-      }
+      data
     });
   } catch (error) {
     console.log(error);

@@ -1,14 +1,14 @@
-import { Button, Flex, FlexProps, Img, Input } from '@chakra-ui/react';
-import { Dispatch, SetStateAction, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import magnifyingGlass_icon from '@/assert/magnifyingGlass.svg';
+import { Button, Flex, FlexProps, Img, Input } from '@chakra-ui/react';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 export default function SearchBox({
   isDisabled,
   setOrderID,
   ...props
 }: {
   isDisabled: boolean;
-  setOrderID: Dispatch<SetStateAction<string>>;
+  setOrderID: (val: string) => void;
 } & FlexProps) {
   const { t } = useTranslation();
   const [searchValue, setSearch] = useState('');

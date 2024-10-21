@@ -5,7 +5,8 @@ import {
   CronJobEditType,
   CronJobListItemType,
   JobEvent,
-  JobList
+  JobList,
+  JobStatus
 } from '@/types/job';
 import { cpuFormatToM, cron2Time, formatPodTime, memoryFormatToMi } from '@/utils/tools';
 import {
@@ -95,7 +96,7 @@ export const adaptCronJobDetail = async (job: V1CronJob): Promise<CronJobEditTyp
     // launchpad
     enableNumberCopies: Boolean(enableNumberCopies),
     enableResources: Boolean(enableResources),
-    replicas: Number(replicas) || 1,
+    replicas: Number(replicas) || 0,
     cpu: cpuFormatToM(cpu || '0'),
     memory: memoryFormatToMi(memory || '0'),
     launchpadName: launchpadName || '',
@@ -139,7 +140,7 @@ export const adaptAppListItem = (app: V1Deployment): AppListItemType => {
     memory: memoryFormatToMi(
       app.spec?.template?.spec?.containers?.[0]?.resources?.limits?.memory || '0'
     ),
-    replicas: app.spec?.replicas || 1
+    replicas: app.spec?.replicas || 0
   };
 };
 
@@ -161,7 +162,11 @@ export const adaptJobItemList = (jobs: V1Job[]): JobList => {
       if (!!item.status?.succeeded) successAmount++;
       const startTimeTimestamp = dayjs(item.status?.startTime).unix();
       return {
-        status: !!item.status?.succeeded,
+        status: !!item.status?.active
+          ? 'active'
+          : !!item.status?.succeeded
+          ? 'succeeded'
+          : ('failed' as JobStatus),
         startTime: dayjs(item.status?.startTime).format('YYYY-MM-DD HH:mm'),
         completionTime: dayjs(item.status?.completionTime).format('YYYY-MM-DD HH:mm'),
         uid: item.metadata?.uid,

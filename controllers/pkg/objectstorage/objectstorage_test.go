@@ -15,10 +15,12 @@
 package objectstorage
 
 import (
+	"fmt"
 	objectstoragev1 "github/labring/sealos/controllers/objectstorage/api/v1"
 	"os"
 	"strconv"
 	"testing"
+	"time"
 )
 
 func TestGetUserObjectStorageFlow(t *testing.T) {
@@ -26,7 +28,8 @@ func TestGetUserObjectStorageFlow(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	bytes, err := GetUserObjectStorageFlow(cli, os.Getenv("PROM_URL"), os.Getenv("MINIO_USERNAME"), os.Getenv("MINIO_INSTANCE"))
+	start := time.Now().Truncate(time.Hour).Add(-time.Hour)
+	bytes, err := GetUserObjectStorageFlow(cli, os.Getenv("PROM_URL"), os.Getenv("MINIO_USERNAME"), os.Getenv("MINIO_INSTANCE"), start, start.Add(time.Hour))
 	if err != nil {
 		t.Error(err)
 	}
@@ -42,5 +45,37 @@ func ConvertBytes(bytes int64) string {
 		return strconv.FormatFloat(float64(bytes)/1024/1024, 'f', 2, 64) + "MB"
 	} else {
 		return strconv.FormatFloat(float64(bytes)/1024/1024/1024, 'f', 2, 64) + "GB"
+	}
+}
+
+func TestQueryUserUsage(t *testing.T) {
+	obClient, err := NewMetricsClient("objectstorageapi.192.168.0.55.nip.io", "username", "passw0rd", false)
+	if err != nil {
+		t.Error(err)
+	}
+	metrics, err := QueryUserUsage(obClient)
+	if err != nil {
+		t.Error(err)
+	}
+	for _, metric := range metrics {
+		fmt.Println(metric)
+	}
+}
+
+func TestQueryUserTraffic(t *testing.T) {
+	obClient, err := NewMetricsClient("objectstorageapi.192.168.0.55.nip.io", "username", "passw0rd", false)
+	if err != nil {
+		t.Error(err)
+	}
+	metrics, err := QueryUserUsageAndTraffic(obClient)
+	if err != nil {
+		t.Error(err)
+	}
+
+	for user, metric := range metrics {
+		fmt.Println("user:", user)
+		fmt.Println("usage:", metric.Usage)
+		fmt.Println("sent:", metric.Sent)
+		fmt.Println("received:", metric.Received)
 	}
 }

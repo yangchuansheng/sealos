@@ -1,20 +1,22 @@
-import React, { useMemo, useState } from 'react';
+import useDetailDriver from '@/hooks/useDetailDriver';
+import { useLoading } from '@/hooks/useLoading';
+import { useToast } from '@/hooks/useToast';
+import { MOCK_APP_DETAIL } from '@/mock/apps';
+import { useAppStore } from '@/store/app';
+import { useGlobalStore } from '@/store/global';
+import { serviceSideProps } from '@/utils/i18n';
 import { Box, Flex, useTheme } from '@chakra-ui/react';
 import { useQuery } from '@tanstack/react-query';
-import { useAppStore } from '@/store/app';
-import { useToast } from '@/hooks/useToast';
-import { useLoading } from '@/hooks/useLoading';
-import { useGlobalStore } from '@/store/global';
-import Header from './components/Header';
-import AppBaseInfo from './components/AppBaseInfo';
-import Pods from './components/Pods';
 import dynamic from 'next/dynamic';
-import { MOCK_APP_DETAIL } from '@/mock/apps';
-import { serviceSideProps } from '@/utils/i18n';
+import React, { useMemo, useState } from 'react';
+import AppBaseInfo from './components/AppBaseInfo';
+import Header from './components/Header';
+import Pods from './components/Pods';
 
 const AppMainInfo = dynamic(() => import('./components/AppMainInfo'), { ssr: false });
 
 const AppDetail = ({ appName }: { appName: string }) => {
+  const { startGuide } = useDetailDriver();
   const theme = useTheme();
   const { toast } = useToast();
   const { Loading } = useLoading();
@@ -24,12 +26,14 @@ const AppDetail = ({ appName }: { appName: string }) => {
     appDetail = MOCK_APP_DETAIL,
     setAppDetail,
     appDetailPods,
-    intervalLoadPods
+    intervalLoadPods,
+    loadDetailMonitorData
   } = useAppStore();
+
   const [podsLoaded, setPodsLoaded] = useState(false);
   const [showSlider, setShowSlider] = useState(false);
 
-  const { refetch } = useQuery(['setAppDetail'], () => setAppDetail(appName), {
+  const { refetch, isSuccess } = useQuery(['setAppDetail'], () => setAppDetail(appName), {
     onError(err) {
       toast({
         title: String(err),
@@ -38,7 +42,6 @@ const AppDetail = ({ appName }: { appName: string }) => {
     }
   });
 
-  // interval get pods metrics
   useQuery(
     ['app-detail-pod'],
     () => {
@@ -54,10 +57,29 @@ const AppDetail = ({ appName }: { appName: string }) => {
     }
   );
 
+  useQuery(
+    ['loadDetailMonitorData', appName, appDetail?.isPause],
+    () => {
+      if (appDetail?.isPause) return null;
+      return loadDetailMonitorData(appName);
+    },
+    {
+      refetchOnMount: true,
+      refetchInterval: 2 * 60 * 1000
+    }
+  );
+
   return (
-    <Flex flexDirection={'column'} height={'100vh'} backgroundColor={'#F3F4F5'} px={9} pb={4}>
+    <Flex
+      flexDirection={'column'}
+      height={'100vh'}
+      backgroundColor={'grayModern.100'}
+      px={'32px'}
+      pb={4}
+    >
       <Box>
         <Header
+          source={appDetail.source}
           appName={appName}
           appStatus={appDetail?.status}
           isPause={appDetail?.isPause}
@@ -76,8 +98,8 @@ const AppDetail = ({ appName }: { appName: string }) => {
           zIndex={1}
           transition={'0.4s'}
           bg={'white'}
-          border={theme.borders.sm}
-          borderRadius={'md'}
+          border={theme.borders.base}
+          borderRadius={'lg'}
           {...(isLargeScreen
             ? {}
             : {
@@ -93,8 +115,8 @@ const AppDetail = ({ appName }: { appName: string }) => {
           <Box
             mb={4}
             bg={'white'}
-            border={theme.borders.sm}
-            borderRadius={'md'}
+            border={theme.borders.base}
+            borderRadius={'lg'}
             flexShrink={0}
             minH={'257px'}
           >
@@ -102,8 +124,8 @@ const AppDetail = ({ appName }: { appName: string }) => {
           </Box>
           <Box
             bg={'white'}
-            border={theme.borders.sm}
-            borderRadius={'md'}
+            border={theme.borders.base}
+            borderRadius={'lg'}
             h={0}
             flex={1}
             minH={'300px'}

@@ -11,10 +11,39 @@ module.exports = (phase, { defaultConfig }) => {
   if (phase === PHASE_DEVELOPMENT_SERVER) {
     /** @type {import('next').NextConfig} */
     const nextConfig = {
-      reactStrictMode: true,
+      reactStrictMode: false,
       i18n,
       experimental: {
         outputFileTracingRoot: path.join(__dirname, '../../')
+      },
+      webpack(config, { isServer }) {
+        if (!isServer) {
+          config.resolve = {
+            ...config.resolve,
+            fallback: {
+              ...config.resolve.fallback,
+              fs: false
+            }
+          };
+        }
+        Object.assign(config.resolve.alias, {
+          'utf-8-validate': false,
+          bufferutil: false
+        });
+        config.module = {
+          ...config.module,
+          rules: config.module.rules.concat([
+            {
+              test: /\.svg$/i,
+              issuer: /\.[jt]sx?$/,
+              use: ['@svgr/webpack']
+            }
+          ]),
+          exprContextCritical: false,
+          unknownContextCritical: false
+        };
+
+        return config;
       },
       async headers() {
         return [

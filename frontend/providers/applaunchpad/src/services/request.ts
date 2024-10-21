@@ -11,7 +11,7 @@ import { getUserKubeConfig } from '@/utils/user';
 const request = axios.create({
   baseURL: '/',
   withCredentials: true,
-  timeout: 60000
+  timeout: 2 * 60 * 1000
 });
 
 // request interceptor
@@ -24,7 +24,10 @@ request.interceptors.request.use(
     let _headers: AxiosHeaders = config.headers;
 
     //获取token，并将其添加至请求头中
-    _headers['Authorization'] = encodeURIComponent(getUserKubeConfig());
+    _headers['Authorization'] = config.headers.Authorization
+      ? config.headers.Authorization
+      : encodeURIComponent(getUserKubeConfig());
+
     if (!config.headers || config.headers['Content-Type'] === '') {
       _headers['Content-Type'] = 'application/json';
     }

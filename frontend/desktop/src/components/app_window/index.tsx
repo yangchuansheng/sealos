@@ -1,11 +1,12 @@
 /* eslint-disable jsx-a11y/alt-text */
 import useAppStore from '@/stores/app';
-import { Box, Flex, Image } from '@chakra-ui/react';
+import { Box, Flex, Image, Text } from '@chakra-ui/react';
 import clsx from 'clsx';
 import React, { useRef, useState } from 'react';
 import Draggable, { DraggableEventHandler } from 'react-draggable';
 import styles from './index.module.scss';
 import { useTranslation } from 'next-i18next';
+import { useConfigStore } from '@/stores/config';
 
 export default function AppWindow(props: {
   style?: React.CSSProperties;
@@ -22,6 +23,7 @@ export default function AppWindow(props: {
     findAppInfoById,
     maxZIndex
   } = useAppStore();
+  const logo = useConfigStore().layoutConfig?.logo;
   const { t, i18n } = useTranslation();
   const wnapp = findAppInfoById(pid);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -107,19 +109,33 @@ export default function AppWindow(props: {
             setPosition({ x: 0, y: 0 });
           }}
         >
-          <Flex ml="16px" alignItems={'center'}>
+          <Flex ml="16px" alignItems={'center'} fontSize={'12px'} fontWeight={400}>
             <Image
               src={wnapp?.icon}
-              fallbackSrc="/images/sealos.svg"
+              fallbackSrc={logo}
               alt={wnapp?.name}
               width={'20px'}
               height={'20px'}
             />
-            <Box ml="8px" color={wnapp?.menuData?.nameColor} fontSize={'12px'} fontWeight={400}>
+            <Box ml="8px" fontSize={'12px'} fontWeight={400}>
               {wnapp?.i18n?.[i18n?.language]?.name
                 ? wnapp.i18n?.[i18n?.language]?.name
-                : t(wnapp?.name)}
+                : wnapp?.name}
             </Box>
+            {wnapp?.menuData &&
+              wnapp?.menuData?.length > 0 &&
+              wnapp?.menuData?.map((item) => (
+                <Text
+                  key={item.name}
+                  color={'#24282C'}
+                  ml="16px"
+                  onClick={() => {
+                    typeof item?.link === 'string' && window.open(item?.link);
+                  }}
+                >
+                  {item.name}
+                </Text>
+              ))}
           </Flex>
           <Flex ml={'auto'}>
             <Box
@@ -136,7 +152,7 @@ export default function AppWindow(props: {
             >
               <Image
                 src="/icons/minimize.png"
-                fallbackSrc="/images/sealos.svg"
+                fallbackSrc={logo}
                 alt={wnapp?.name}
                 width={'12px'}
                 height={'12px'}
@@ -157,7 +173,7 @@ export default function AppWindow(props: {
             >
               <Image
                 src={wnapp.size === 'maximize' ? '/icons/maximize.png' : '/icons/maxmin.png'}
-                fallbackSrc="/images/sealos.svg"
+                fallbackSrc={logo}
                 alt={wnapp?.name}
                 width={'12px'}
                 height={'12px'}
@@ -178,7 +194,7 @@ export default function AppWindow(props: {
             >
               <Image
                 src={'/icons/close.png'}
-                fallbackSrc="/images/sealos.svg"
+                fallbackSrc={logo}
                 alt={wnapp?.name}
                 width={'12px'}
                 height={'12px'}

@@ -2,7 +2,6 @@ import { deleteMigrateByName, getMigrateList, getMigratePodList } from '@/api/mi
 import MyIcon from '@/components/Icon';
 import { useConfirm } from '@/hooks/useConfirm';
 import { useLoading } from '@/hooks/useLoading';
-import { useToast } from '@/hooks/useToast';
 import { MigrateItemType } from '@/types/migrate';
 import { getErrText } from '@/utils/tools';
 import {
@@ -17,17 +16,19 @@ import {
   Thead,
   Tr
 } from '@chakra-ui/react';
+import { MyTooltip, useMessage } from '@sealos/ui';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useTranslation } from 'next-i18next';
 import React, { useCallback, useState } from 'react';
 import LogsModal from './LogsModal';
 import MigrateStatus from './MigrateStatus';
+import { I18nCommonKey } from '@/types/i18next';
 
 export const MigrateTable = ({ dbName }: { dbName: string }) => {
   if (!dbName) return <></>;
   const { t } = useTranslation();
-  const { toast } = useToast();
+  const { message: toast } = useMessage();
   const { Loading, setIsLoading } = useLoading();
   const [migrateName, setMigrateName] = useState('');
   const [logsPodIndex, setLogsPodIndex] = useState<number>();
@@ -53,7 +54,7 @@ export const MigrateTable = ({ dbName }: { dbName: string }) => {
   );
 
   const { openConfirm: openConfirmDel, ConfirmChild: ConfirmDelChild } = useConfirm({
-    content: t('Confirm delete the migrate')
+    content: t('confirm_delete_the_migrate')
   });
 
   const confirmDel = useCallback(
@@ -78,57 +79,54 @@ export const MigrateTable = ({ dbName }: { dbName: string }) => {
   };
 
   const columns: {
-    title: string;
+    title: I18nCommonKey;
     dataIndex?: keyof MigrateItemType;
     key: string;
     render?: (item: MigrateItemType, i: number) => React.ReactNode | string;
   }[] = [
     {
-      title: 'Name',
+      title: 'name',
       key: 'name',
       dataIndex: 'name'
     },
     {
-      title: 'Remark',
+      title: 'remark',
       key: 'remark',
       dataIndex: 'remark'
     },
     {
-      title: 'Status',
+      title: 'status',
       key: 'status',
       render: (item: MigrateItemType) => (
         <MigrateStatus migrateStatus={item.status} migrateName={item.name} />
       )
     },
     {
-      title: 'Creation Time',
+      title: 'creation_time',
       key: 'creationtime',
       render: (item: MigrateItemType) => <>{dayjs(item.startTime).format('YYYY/MM/DD HH:mm')}</>
     },
     {
-      title: 'Operation',
+      title: 'operation',
       key: 'control',
       render: (item: MigrateItemType) => {
         return (
-          <Flex>
-            <Button
-              mr={3}
-              leftIcon={<MyIcon name="log" w="16px" h="16px" />}
-              variant={'base'}
-              px={3}
-              onClick={() => openLogModal(item.name)}
-            >
-              {t('Logs')}
-            </Button>
-            <Button
-              mr={3}
-              leftIcon={<MyIcon name="delete" w="16px" h="16px" />}
-              variant={'base'}
-              px={3}
-              onClick={openConfirmDel(() => confirmDel(item.name))}
-            >
-              {t('Delete')}
-            </Button>
+          <Flex alignItems={'center'} gap={'4px'}>
+            <MyTooltip offset={[0, 10]} label={t('Logs')}>
+              <Button variant={'square'} onClick={() => openLogModal(item.name)}>
+                <MyIcon name={'log'} w="18px" h="18px" fill={'#485264'} />
+              </Button>
+            </MyTooltip>
+
+            <MyTooltip offset={[0, 10]} label={t('Delete')}>
+              <Button
+                variant={'square'}
+                onClick={openConfirmDel(() => confirmDel(item.name))}
+                _hover={{ bg: '#EFF0F1', color: 'red.600' }}
+              >
+                <MyIcon name={'delete'} w="18px" h="18px" fill={'#485264'} />
+              </Button>
+            </MyTooltip>
           </Flex>
         );
       }
@@ -147,8 +145,9 @@ export const MigrateTable = ({ dbName }: { dbName: string }) => {
                   py={4}
                   key={item.key}
                   border={'none'}
-                  backgroundColor={'#F8F8FA'}
+                  backgroundColor={'grayModern.50'}
                   fontWeight={'500'}
+                  color={'grayModern.600'}
                 >
                   {t(item.title)}
                 </Th>
@@ -175,7 +174,7 @@ export const MigrateTable = ({ dbName }: { dbName: string }) => {
       {isSuccess && migrateList.length === 0 && (
         <Flex justifyContent={'center'} alignItems={'center'} flexDirection={'column'} flex={1}>
           <MyIcon name={'noEvents'} color={'transparent'} width={'36px'} height={'36px'} />
-          <Box pt={'8px'}>{t('No Data Available')}</Box>
+          <Box pt={'8px'}>{t('no_data_available')}</Box>
         </Flex>
       )}
       <ConfirmDelChild />

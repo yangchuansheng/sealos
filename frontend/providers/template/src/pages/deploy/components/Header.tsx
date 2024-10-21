@@ -1,9 +1,12 @@
+import MyIcon from '@/components/Icon';
 import { CopyLinkIcon, HomePageIcon, HtmlIcon, MdIcon, ShareIcon } from '@/components/icons';
 import { TemplateType } from '@/types/app';
 import type { YamlItemType } from '@/types/index';
-import { downLoadBold, useCopyData } from '@/utils/tools';
+import { downLoadBold, formatStarNumber, useCopyData } from '@/utils/tools';
+import { getResourceUsage } from '@/utils/usage';
 import {
-  Box,
+  Avatar,
+  AvatarGroup,
   Button,
   Divider,
   Flex,
@@ -18,12 +21,10 @@ import {
   Tooltip
 } from '@chakra-ui/react';
 import dayjs from 'dayjs';
+import { nanoid } from 'nanoid';
 import { useTranslation } from 'next-i18next';
 import { MouseEvent, useCallback, useMemo } from 'react';
-
-const MdPart = `![](https://raw.githubusercontent.com/labring-actions/templates/main/Deploy-on-Sealos.svg)](https://cloud.sealos.io/?openapp=system-fastdeploy%3FtemplateName%3Dfastgpt`;
-
-const HtmlPart = `<a href="https://cloud.sealos.io/?openapp=system-fastdeploy%3FtemplateName%3Dfastgpt"><img src="https://raw.githubusercontent.com/labring-actions/templates/main/Deploy-on-Sealos.svg" alt="Deploy on Sealos"/></a>`;
+import PriceBox, { Currencysymbol, usePriceCalculation } from './PriceBox';
 
 const Header = ({
   appName,
@@ -45,7 +46,7 @@ const Header = ({
   const { t } = useTranslation();
   const { copyData } = useCopyData();
   const handleExportYaml = useCallback(async () => {
-    const exportYamlString = yamlList.map((i) => i.value).join('---\n');
+    const exportYamlString = yamlList?.map((i) => i.value).join('---\n');
     if (!exportYamlString) return;
     downLoadBold(
       exportYamlString,
@@ -69,10 +70,44 @@ const Header = ({
     cursor: 'pointer'
   };
 
-  const copyTemplateLink = () => {
-    const str = `https://${cloudDomain}/?openapp=system-fastdeploy%3FtemplateName%3D${appName}`;
+  const copyTemplateLink = useCallback(() => {
+    const str = `https://${cloudDomain}/?openapp=system-template%3FtemplateName%3D${appName}`;
     copyData(str);
-  };
+  }, [appName, cloudDomain, copyData]);
+
+  const MdPart = `[![](https://raw.githubusercontent.com/labring-actions/templates/main/Deploy-on-Sealos.svg)](https://${cloudDomain}/?openapp=system-template%3FtemplateName%3D${appName})`;
+
+  const HtmlPart = `<a href="https://${cloudDomain}/?openapp=system-template%3FtemplateName%3D${appName}"><img src="https://raw.githubusercontent.com/labring-actions/templates/main/Deploy-on-Sealos.svg" alt="Deploy on Sealos"/></a>`;
+
+  const DeployCountComponent = useMemo(() => {
+    return (
+      <>
+        {templateDetail?.spec?.deployCount && templateDetail?.spec?.deployCount > 6 && (
+          <Tooltip
+            label={t('users installed the app', { count: templateDetail.spec.deployCount })}
+            hasArrow
+            bg="#FFF"
+          >
+            <Flex gap={'6px'} cursor={'pointer'}>
+              <AvatarGroup size={'xs'} max={3}>
+                <Avatar name={nanoid(6)} />
+                <Avatar name={nanoid(6)} />
+                <Avatar name={nanoid(6)} />
+              </AvatarGroup>
+              <Text>+{formatStarNumber(templateDetail.spec.deployCount)}</Text>
+            </Flex>
+          </Tooltip>
+        )}
+      </>
+    );
+  }, [t, templateDetail?.spec?.deployCount]);
+
+  const usage = useMemo(() => {
+    const usage = getResourceUsage(yamlList?.map((item) => item.value) || []);
+    return usage;
+  }, [yamlList]);
+
+  const priceList = usePriceCalculation(usage);
 
   return (
     <Flex w={'100%'} h={'80px'} alignItems={'center'} backgroundColor={'rgba(255, 255, 255, 0.90)'}>
@@ -90,13 +125,13 @@ const Header = ({
         <Image src={templateDetail?.spec?.icon} alt="" width={'60px'} height={'60px'} />
       </Flex>
       <Flex ml={'24px'} w="520px" flexDirection={'column'}>
-        <Flex alignItems={'center'}>
+        <Flex alignItems={'center'} gap={'12px'}>
           <Text fontSize={'24px'} fontWeight={600} color={'#24282C'}>
             {templateDetail?.spec?.title}
           </Text>
+          {DeployCountComponent}
           <Flex
             cursor={'pointer'}
-            ml="12px"
             p="6px"
             borderRadius={'4px'}
             alignItems={'center'}
@@ -115,7 +150,6 @@ const Header = ({
             <PopoverTrigger>
               <Flex
                 cursor={'pointer'}
-                ml="12px"
                 p="6px"
                 borderRadius={'4px'}
                 alignItems={'center'}
@@ -129,15 +163,19 @@ const Header = ({
                 </Text>
               </Flex>
             </PopoverTrigger>
-            <PopoverContent w="208px">
-              <PopoverArrow />
+            <PopoverContent
+              w="208px"
+              border={'none'}
+              boxShadow={
+                '0px 32px 64px -12px rgba(19, 51, 107, 0.20), 0px 0px 1px 0px rgba(19, 51, 107, 0.20)'
+              }
+            >
               <PopoverBody p={'20px'}>
                 <Flex
                   onClick={copyTemplateLink}
-                  w="60px"
                   flexDirection={'column'}
                   justifyContent={'center'}
-                  alignItems={'center'}
+                  alignItems={'start'}
                 >
                   <Flex {...IconBox}>
                     <CopyLinkIcon />
@@ -195,26 +233,56 @@ const Header = ({
             fontSize={'12px'}
             color={'5A646E'}
             fontWeight={400}
+            onClick={() => copyData(templateDetail?.spec?.description)}
           >
             {templateDetail?.spec?.description}
           </Text>
         </Tooltip>
       </Flex>
+      <Popover trigger="hover" closeDelay={600}>
+        <PopoverTrigger>
+          <Flex
+            cursor={'pointer'}
+            ml={'auto'}
+            alignItems={'center'}
+            color={'brightBlue.600'}
+            fontSize={'20px'}
+            fontWeight={'bold'}
+            flexShrink={'0'}
+            gap={'4px'}
+          >
+            <Currencysymbol w={'16px'} h={'16px'} type={'shellCoin'} />
+            {priceList?.[priceList.length - 1]?.value}
+            <Text fontSize={'16px'}>/{t('Day')}</Text>
+            <MyIcon name="help" width={'16px'} height={'16px'} color={'grayModern.500'}></MyIcon>
+          </Flex>
+        </PopoverTrigger>
+        <PopoverContent
+          width={'205px'}
+          borderRadius={'8px'}
+          boxShadow={
+            '0px 32px 64px -12px rgba(19, 51, 107, 0.20), 0px 0px 1px 0px rgba(19, 51, 107, 0.20)'
+          }
+          border={'none'}
+        >
+          <PriceBox {...usage} />
+        </PopoverContent>
+      </Popover>
 
       <Button
         h={'40px'}
-        ml={'auto'}
-        mr={5}
+        mr={'12px'}
+        ml={'20px'}
         px={4}
-        minW={'140px'}
-        bg={'myWhite.600'}
-        borderColor={'myGray.200'}
-        variant={'base'}
+        minW={'120px'}
+        variant={'unstyled'}
+        bg={'grayModern.150'}
+        color={'grayModern.900'}
         onClick={handleExportYaml}
       >
         {t('Export')} Yaml
       </Button>
-      <Button px={4} minW={'140px'} h={'40px'} variant={'primary'} onClick={applyCb}>
+      <Button px={4} minW={'120px'} h={'40px'} variant={'solid'} onClick={applyCb}>
         {t(applyBtnText)}
       </Button>
     </Flex>

@@ -1,17 +1,17 @@
-import yaml from 'js-yaml';
-import type { AppEditType } from '@/types/app';
-import { strToBase64, str2Num, pathFormat, pathToNameFormat } from '@/utils/tools';
-import { SEALOS_DOMAIN, INGRESS_SECRET } from '@/store/static';
 import {
-  maxReplicasKey,
-  minReplicasKey,
   appDeployKey,
-  publicDomainKey,
+  deployPVCResizeKey,
   gpuNodeSelectorKey,
   gpuResourceKey,
-  deployPVCResizeKey
+  maxReplicasKey,
+  minReplicasKey,
+  publicDomainKey
 } from '@/constants/app';
+import { SEALOS_USER_DOMAINS } from '@/store/static';
+import type { AppEditType } from '@/types/app';
+import { pathFormat, pathToNameFormat, str2Num, strToBase64 } from '@/utils/tools';
 import dayjs from 'dayjs';
+import yaml from 'js-yaml';
 
 export const json2DeployCr = (data: AppEditType, type: 'deployment' | 'statefulset') => {
   const totalStorage = data.storeList.reduce((acc, item) => acc + item.value, 0);
@@ -161,6 +161,7 @@ export const json2DeployCr = (data: AppEditType, type: 'deployment' | 'statefuls
         template: {
           metadata: templateMetadata,
           spec: {
+            automountServiceAccountToken: false,
             imagePullSecrets,
             containers: [
               {
@@ -191,6 +192,7 @@ export const json2DeployCr = (data: AppEditType, type: 'deployment' | 'statefuls
         template: {
           metadata: templateMetadata,
           spec: {
+            automountServiceAccountToken: false,
             imagePullSecrets,
             terminationGracePeriodSeconds: 10,
             containers: [
@@ -270,9 +272,12 @@ export const json2Ingress = (data: AppEditType) => {
     .map((network, i) => {
       const host = network.customDomain
         ? network.customDomain
-        : `${network.publicDomain}.${SEALOS_DOMAIN}`;
+        : `${network.publicDomain}.${network.domain}`;
 
-      const secretName = network.customDomain ? data.appName : INGRESS_SECRET;
+      const secretName = network.customDomain
+        ? network.networkName
+        : SEALOS_USER_DOMAINS.find((domain) => domain.name === network.domain)?.secretName ||
+          'wildcard-cert';
 
       const ingress = {
         apiVersion: 'networking.k8s.io/v1',
@@ -339,7 +344,8 @@ export const json2Ingress = (data: AppEditType) => {
               {
                 http01: {
                   ingress: {
-                    class: 'nginx'
+                    class: 'nginx',
+                    serviceType: 'ClusterIP'
                   }
                 }
               }
@@ -424,6 +430,8 @@ export const json2Secret = (data: AppEditType) => {
   return yaml.dump(template);
 };
 export const json2HPA = (data: AppEditType) => {
+  const isDeployment = data.storeList?.length === 0;
+
   const template = {
     apiVersion: 'autoscaling/v2',
     kind: 'HorizontalPodAutoscaler',
@@ -433,7 +441,7 @@ export const json2HPA = (data: AppEditType) => {
     spec: {
       scaleTargetRef: {
         apiVersion: 'apps/v1',
-        kind: 'Deployment',
+        kind: isDeployment ? 'Deployment' : 'StatefulSet',
         name: data.appName
       },
       minReplicas: str2Num(data.hpa?.minReplicas),

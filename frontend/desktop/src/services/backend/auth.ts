@@ -1,52 +1,94 @@
+import { JWTPayload } from '@/types';
+import {
+  AccessTokenPayload,
+  AuthenticationTokenPayload,
+  BillingTokenPayload,
+  CronJobTokenPayload,
+  OnceTokenPayload
+} from '@/types/token';
 import { IncomingHttpHeaders } from 'http';
 import { sign, verify } from 'jsonwebtoken';
-import { K8sApi } from './kubernetes/user';
-import { JWTPayload } from '@/types';
 
-const jwtSecret = (process.env.JWT_SECRET as string) || '123456789';
-export const authSession = async (header: IncomingHttpHeaders) => {
+const regionUID = () => global.AppConfig?.cloud.regionUID || '123456789';
+const grobalJwtSecret = () => global.AppConfig?.desktop.auth.jwt.global || '123456789';
+const regionalJwtSecret = () => global.AppConfig?.desktop.auth.jwt.regional || '123456789';
+const internalJwtSecret = () => global.AppConfig?.desktop.auth.jwt.internal || '123456789';
+const verifyToken = async <T extends Object>(header: IncomingHttpHeaders) => {
   try {
     if (!header?.authorization) {
       throw new Error('缺少凭证');
     }
     const token = decodeURIComponent(header.authorization);
-    const payload = await verifyJWT(token);
-    if (
-      !payload ||
-      !payload.kubeconfig ||
-      !payload?.user?.uid ||
-      !payload?.user?.nsid ||
-      !payload?.user?.ns_uid ||
-      !payload?.user?.k8s_username
-    )
-      throw new Error('token is null');
-    // console.log('jwt:', payload.kubeconfig)
-    const kc = K8sApi(payload.kubeconfig);
-    const username = kc.getCurrentUser()?.name;
-    const user = payload.user;
-    if (!username || user.k8s_username !== username) throw new Error('user is invaild');
-    return Promise.resolve({ kc, user, kcRaw: payload.kubeconfig });
+    const payload = await verifyJWT<T>(token);
+    return payload;
   } catch (err) {
-    console.error(err);
-    return Promise.resolve(null);
+    return null;
   }
 };
-export const verifyJWT: (token: string) => Promise<JWTPayload | null> = (token: string) =>
-  new Promise((resolve) => {
-    verify(token, jwtSecret, (err, payload) => {
+
+export const verifyAccessToken = async (header: IncomingHttpHeaders) =>
+  verifyToken<AccessTokenPayload>(header).then(
+    (payload) => {
+      if (payload?.regionUid === regionUID()) {
+        return payload;
+      } else {
+        return null;
+      }
+    },
+    (err) => null
+  );
+
+export const verifyAuthenticationToken = async (header: IncomingHttpHeaders) => {
+  try {
+    if (!header?.authorization) {
+      throw new Error('缺少凭证');
+    }
+    const token = decodeURIComponent(header.authorization);
+    const payload = await verifyJWT<AuthenticationTokenPayload>(token, grobalJwtSecret());
+    return payload;
+  } catch (err) {
+    return null;
+  }
+};
+export const verifyJWT = <T extends Object = JWTPayload>(token?: string, secret?: string) =>
+  new Promise<T | null>((resolve) => {
+    if (!token) return resolve(null);
+    verify(token, secret || regionalJwtSecret(), (err, payload) => {
       if (err) {
-        console.log(err);
+        // console.log(err);
         resolve(null);
       } else if (!payload) {
-        console.log('payload is null');
         resolve(null);
       } else {
-        resolve(payload as JWTPayload);
+        resolve(payload as T);
       }
     });
   });
-export const generateJWT = (props: JWTPayload) => {
-  return sign(props, jwtSecret, {
-    expiresIn: '7d'
-  });
+
+export const verifyAppToken = async (header: IncomingHttpHeaders) => {
+  try {
+    if (!header?.authorization) {
+      throw new Error('缺少凭证');
+    }
+    const token = decodeURIComponent(header.authorization);
+    const payload = await verifyJWT<AccessTokenPayload>(token, internalJwtSecret());
+    return payload;
+  } catch (err) {
+    return null;
+  }
 };
+
+export const generateBillingToken = (props: BillingTokenPayload) =>
+  sign(props, internalJwtSecret(), { expiresIn: '3600000' });
+export const generateAccessToken = (props: AccessTokenPayload) =>
+  sign(props, regionalJwtSecret(), { expiresIn: '7d' });
+export const generateAppToken = (props: AccessTokenPayload) =>
+  sign(props, internalJwtSecret(), { expiresIn: '7d' });
+export const generateAuthenticationToken = (props: AuthenticationTokenPayload) =>
+  sign(props, grobalJwtSecret(), { expiresIn: '60000' });
+
+export const generateOnceToken = (props: OnceTokenPayload) =>
+  sign(props, regionalJwtSecret(), { expiresIn: '1800000' });
+
+export const generateCronJobToken = (props: CronJobTokenPayload) =>
+  sign(props, internalJwtSecret(), { expiresIn: '60000' });

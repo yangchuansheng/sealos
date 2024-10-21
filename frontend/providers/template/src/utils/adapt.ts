@@ -1,12 +1,25 @@
-import { componentLabel, maxReplicasKey, minReplicasKey, pauseKey } from '@/constants/keys';
+import {
+  componentLabel,
+  maxReplicasKey,
+  minReplicasKey,
+  pauseKey,
+  templateDisplayNameKey
+} from '@/constants/keys';
 import { StatusEnum, StatusMap } from '@/constants/status';
 import { InstanceListItemType, TemplateInstanceType } from '@/types/app';
 import { AppCrdType } from '@/types/appCRD';
 import { CronJobListItemType } from '@/types/cronJob';
 import { DBListItemType, KbPgClusterType } from '@/types/db';
 import { AppListItemType } from '@/types/launchpad';
-import { BaseResourceType, OtherResourceListItemType, ResourceKindType } from '@/types/resource';
-import { V1CronJob, V1Deployment, V1Job, V1Secret, V1StatefulSet } from '@kubernetes/client-node';
+import { ResourceListItemType, AllResourceKindType } from '@/types/resource';
+import {
+  V1CronJob,
+  V1Deployment,
+  V1Job,
+  V1Secret,
+  V1Service,
+  V1StatefulSet
+} from '@kubernetes/client-node';
 import cronParser from 'cron-parser';
 import cronstrue from 'cronstrue';
 import 'cronstrue/locales/en';
@@ -15,6 +28,7 @@ import dayjs from 'dayjs';
 import { flatMap } from 'lodash';
 import { getLangStore } from './cookieUtils';
 import { cpuFormatToM, memoryFormatToMi } from './tools';
+import { ObjectStorageCR, ObjectStorageItemType } from '@/types/objectStorage';
 
 export function sortItemsByCreateTime<T extends { createTime: string }>(items: T[]): T[] {
   return items.sort((a, b) => {
@@ -26,16 +40,18 @@ export function sortItemsByCreateTime<T extends { createTime: string }>(items: T
 
 export function adaptInstanceListItem(item: TemplateInstanceType): InstanceListItemType {
   return {
-    id: item.metadata.name,
+    id: item.metadata?.name,
     createTime: dayjs(item.metadata?.creationTimestamp).format('YYYY-MM-DD HH:mm'),
-    author: item.spec.author,
-    description: item.spec.description,
-    gitRepo: item.spec.gitRepo,
-    icon: item.spec.icon,
-    readme: item.spec.readme,
-    templateType: item.spec.templateType,
-    title: item.spec.title,
-    url: item.spec.url
+    author: item.spec?.author,
+    description: item.spec?.description,
+    gitRepo: item.spec?.gitRepo,
+    icon: item.spec?.icon,
+    readme: item.spec?.readme,
+    templateType: item.spec?.templateType,
+    title: item.spec?.title,
+    url: item.spec?.url,
+    yamlCR: item,
+    displayName: item.metadata?.labels?.[templateDisplayNameKey]
   };
 }
 
@@ -72,7 +88,9 @@ export const adaptDBListItem = (db: KbPgClusterType): DBListItemType => {
     id: db.metadata?.uid || ``,
     name: db.metadata?.name || 'db name',
     dbType: db?.metadata?.labels['clusterdefinition.kubeblocks.io/name'] || 'postgresql',
-    status: StatusMap[db?.status?.phase || 'Waiting'],
+    status: StatusMap[db?.status?.phase || 'Waiting']
+      ? StatusMap[db?.status?.phase || 'Waiting']
+      : StatusMap[StatusEnum.Waiting],
     createTime: dayjs(db.metadata?.creationTimestamp).format('YYYY/MM/DD HH:mm'),
     cpu: cpuFormatToM(db.spec?.componentSpecs?.[0]?.resources.limits.cpu),
     memory: memoryFormatToMi(db.spec?.componentSpecs?.[0]?.resources.limits.memory),
@@ -104,19 +122,34 @@ export const adaptCronJobList = (job: V1CronJob): CronJobListItemType => {
 };
 
 export const adaptOtherList = (
-  data: (AppCrdType[] | V1Secret[] | V1Job[])[]
-): OtherResourceListItemType[] => {
+  data: (AppCrdType[] | V1Secret[] | V1Job[] | V1Service[])[]
+): ResourceListItemType[] => {
   return flatMap(data, (innerArray) => {
     return innerArray.map((item) => {
       const labels: { [key: string]: string } = item.metadata?.labels || {};
+      const kind = item.kind as AllResourceKindType;
       return {
         id: item.metadata?.uid || '',
         name: item.metadata?.name || '',
         createTime: dayjs(item.metadata?.creationTimestamp).format('YYYY/MM/DD HH:mm'),
-        kind: item.kind as ResourceKindType,
+        kind: kind,
         label: labels[componentLabel] ?? '',
-        apiVersion: item.apiVersion
+        apiVersion: item.apiVersion ?? '',
+        servicePorts: kind === 'Service' ? (item as V1Service)?.spec?.ports || [] : [],
+        serviceType: (item as V1Service)?.spec?.type || 'ClusterIP'
       };
     });
   });
+};
+
+export const adaptObjectStorageItem = (item: ObjectStorageCR): ObjectStorageItemType => {
+  return {
+    id: item.metadata?.uid || '',
+    name: item.metadata?.name || '',
+    policy: item.spec.policy,
+    createTime: dayjs(item.metadata?.creationTimestamp).format('YYYY/MM/DD HH:mm'),
+    status: item.status?.name ? StatusMap[StatusEnum.Running] : StatusMap[StatusEnum.Waiting],
+    apiVersion: item.apiVersion,
+    kind: 'ObjectStorageBucket'
+  };
 };

@@ -1,13 +1,11 @@
 import MyIcon from '@/components/Icon';
 import MonitorChart from '@/components/MonitorChart';
+import { LineStyleMap } from '@/constants/monitor';
 import { GET } from '@/services/request';
-import { DBDetailType } from '@/types/db';
-import { ChartTemplateProps, MonitorQueryKey } from '@/types/monitor';
+import { ChartTemplateProps } from '@/types/monitor';
 import { Box, Flex, Text } from '@chakra-ui/react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'next-i18next';
-import { useMemo } from 'react';
-import { LineStyleMap } from '@/constants/monitor';
 
 const ChartTemplate = ({
   db,
@@ -42,7 +40,7 @@ const ChartTemplate = ({
     >
       {ChartData?.result?.xData?.length > 0 ? (
         <Flex flexDirection={'column'} h="100%">
-          <Box fontSize={'12px'} fontWeight={500} color={'#24282C'} mb="16px">
+          <Box fontSize={'12px'} fontWeight={500} color={'grayModern.900'} mb="16px">
             {t(chartTitle)}
             {unit ? `(${unit})` : ''}
           </Box>
@@ -85,15 +83,15 @@ const ChartTemplate = ({
           </Flex>
         </Flex>
       ) : (
-        <Flex
-          justifyContent={'center'}
-          alignItems={'center'}
-          flexDirection={'column'}
-          w="100%"
-          h="100%"
-        >
-          <MyIcon name={'noEvents'} color={'transparent'} width={'36px'} height={'36px'} />
-          <Box pt={'8px'}>{t('No Data Available')}</Box>
+        <Flex flexDirection={'column'} h="100%">
+          <Box fontSize={'12px'} fontWeight={500} color={'#24282C'}>
+            {t(chartTitle)}
+            {unit ? `(${unit})` : ''}
+          </Box>
+          <Flex justifyContent={'center'} alignItems={'center'} flexDirection={'column'} flex={1}>
+            <MyIcon name={'noEvents'} color={'transparent'} width={'36px'} height={'36px'} />
+            <Box pt={'8px'}>{t('no_data_available')}</Box>
+          </Flex>
         </Flex>
       )}
     </Box>

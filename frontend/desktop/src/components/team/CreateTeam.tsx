@@ -20,18 +20,18 @@ import useSessionStore from '@/stores/session';
 import { createRequest } from '@/api/namespace';
 import { useCustomToast } from '@/hooks/useCustomToast';
 import { ApiResp } from '@/types';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from 'next-i18next';
 import { AddIcon, GroupAddIcon } from '@sealos/ui';
 export default function CreateTeam({ textButton = false }: { textButton?: boolean }) {
   const { onOpen, isOpen, onClose } = useDisclosure();
   const { t } = useTranslation();
   const [teamName, setTeamName] = useState('');
   const session = useSessionStore((s) => s.session);
-  const userId = session.user.userId;
+  const userCrUid = session?.user?.userCrUid;
   const queryClient = useQueryClient();
   const { toast } = useCustomToast({ status: 'error' });
   const mutation = useMutation(createRequest, {
-    mutationKey: [{ teamName, userId }],
+    mutationKey: [{ teamName, userCrUid }],
     onSuccess(data) {
       if (data.code === 200) {
         queryClient.invalidateQueries({ queryKey: ['teamList'] });
@@ -58,7 +58,7 @@ export default function CreateTeam({ textButton = false }: { textButton?: boolea
           leftIcon={<AddIcon boxSize={'20px'} color={'white'} />}
           iconSpacing={'8px'}
         >
-          {t('Create Team')}
+          {t('common:create_team')}
         </Button>
       ) : (
         <IconButton
@@ -82,8 +82,10 @@ export default function CreateTeam({ textButton = false }: { textButton?: boolea
           backdropFilter="blur(150px)"
           p="24px"
         >
-          <ModalCloseButton right={'24px'} top="24px" p="0" />
-          <ModalHeader p="0">{t('Create Team')}</ModalHeader>
+          <ModalCloseButton right={'24px'} top="16px" p="0" />
+          <ModalHeader bg={'white'} border={'none'} p="0">
+            {t('common:create_team')}
+          </ModalHeader>
           {mutation.isLoading ? (
             <Spinner mx={'auto'} />
           ) : (
@@ -94,7 +96,7 @@ export default function CreateTeam({ textButton = false }: { textButton?: boolea
                     e.preventDefault();
                     setTeamName(e.target.value);
                   }}
-                  placeholder={t('Name of Team') || ''}
+                  placeholder={t('common:name_of_team') || ''}
                   value={teamName}
                 />
                 <Button
@@ -114,7 +116,7 @@ export default function CreateTeam({ textButton = false }: { textButton?: boolea
                     submit();
                   }}
                 >
-                  {t('Confirm')}
+                  {t('common:confirm')}
                 </Button>
               </ModalBody>
             </>

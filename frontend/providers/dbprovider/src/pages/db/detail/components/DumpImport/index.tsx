@@ -1,5 +1,6 @@
-import { applyYamlList, getDBSecret } from '@/api/db';
+import { getDBSecret } from '@/api/db';
 import {
+  applyDumpCR,
   deleteMigrateJobByName,
   getLogByNameAndContainerName,
   getMigratePodList
@@ -7,10 +8,9 @@ import {
 import { uploadFile } from '@/api/platform';
 import FileSelect from '@/components/FileSelect';
 import MyIcon from '@/components/Icon';
-import { useToast } from '@/hooks/useToast';
+import QuotaBox from '@/components/QuotaBox';
 import { DBDetailType } from '@/types/db';
 import { DumpForm } from '@/types/migrate';
-import { json2DumpCR } from '@/utils/json2Yaml';
 import {
   Box,
   Button,
@@ -21,18 +21,17 @@ import {
   ModalBody,
   ModalCloseButton,
   ModalContent,
-  ModalFooter,
   ModalHeader,
   ModalOverlay,
   Spinner,
   Text,
   useDisclosure
 } from '@chakra-ui/react';
+import { useMessage } from '@sealos/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'next-i18next';
 import { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import QuotaBox from './QuotaBox';
 
 enum MigrateStatusEnum {
   Prepare = 'Prepare',
@@ -45,7 +44,7 @@ enum MigrateStatusEnum {
 export default function DumpImport({ db }: { db?: DBDetailType }) {
   const { t } = useTranslation();
   const [files, setFiles] = useState<File[]>([]);
-  const { toast } = useToast();
+  const { message: toast } = useMessage();
   const [migrateStatus, setMigrateStatus] = useState<MigrateStatusEnum>(MigrateStatusEnum.Prepare);
   const { isOpen, onOpen, onClose } = useDisclosure();
   const formHook = useForm<DumpForm>();
@@ -63,7 +62,7 @@ export default function DumpImport({ db }: { db?: DBDetailType }) {
           if (files.length <= 0) {
             closeMigrate();
             return toast({
-              title: t('Lost File'),
+              title: t('lost_file'),
               status: 'error'
             });
           }
@@ -75,24 +74,22 @@ export default function DumpImport({ db }: { db?: DBDetailType }) {
             if (!e.progress) return;
             const percent = Math.round(e.progress * 100);
             if (percent < 100) {
-              setFileProgressText(t('file.Uploading', { percent }) || '');
+              setFileProgressText(t('file.Uploading', { percent }));
             } else {
-              setFileProgressText(t('file.Upload Success') || '');
+              setFileProgressText(t('file.Upload Success'));
             }
           });
 
           if (!result[0]) {
             closeMigrate();
             return toast({
-              title: t('File upload failed'),
+              title: t('file_upload_failed'),
               status: 'error'
             });
           }
           formHook.setValue('fileName', result[0]);
-          const { yamlStr, yamlObj } = await json2DumpCR({ ...data, fileName: result[0] });
-          setMigrateName(yamlObj.metadata.name);
-          console.log(yamlStr, yamlObj.metadata.name);
-          await applyYamlList([yamlStr], 'create');
+          const res = await applyDumpCR({ ...data, fileName: result[0] });
+          setMigrateName(res.name);
         } catch (error: any) {
           toast({
             title: String(error),
@@ -104,7 +101,7 @@ export default function DumpImport({ db }: { db?: DBDetailType }) {
       (error) => {
         onClose();
         const deepSearch = (obj: any): string => {
-          if (!obj) return t('Submit Error');
+          if (!obj) return t('submit_error');
           if (!!obj.message) {
             return obj.message;
           }
@@ -198,99 +195,75 @@ export default function DumpImport({ db }: { db?: DBDetailType }) {
   );
 
   return (
-    <Box h={'100%'} position={'relative'} px="26px" pb="40px">
-      <Flex borderRadius={'4px'} border={'1px solid #EAEBF0'} h="100%">
-        <Box flex={'0 1 256px'} borderRight={'1px solid #EAEBF0'}>
-          <QuotaBox />
-          {/* {db && (
-            <PriceBox
-              components={[
-                {
-                  cpu: db?.cpu,
-                  memory: db?.memory,
-                  storage: db?.storage,
-                  replicas: [db?.replicas || 1, db?.replicas || 1]
-                },
-                ...(db?.dbType === DBTypeEnum.redis
-                  ? (() => {
-                      const config = RedisHAConfig(db?.replicas > 1);
-                      return [
-                        {
-                          ...config,
-                          replicas: [config.replicas, config.replicas]
-                        }
-                      ];
-                    })()
-                  : [])
-              ]}
-            />
-          )} */}
-        </Box>
-        <Box flex={1} pt="35px" px="68px" overflowY={'auto'}>
-          <Text color={'#24282C'} fontSize={'16px'} fontWeight={500}>
-            {t('Upload dump file')}
+    <Box h={'100%'} position={'relative'}>
+      <Flex borderTop={'1px solid #EAEBF0'} h="100%">
+        <Box flex={1} pt="35px" px="40px" overflowY={'auto'}>
+          <Text fontSize={'base'} fontWeight={'bold'} color={'grayModern.900'}>
+            {t('upload_dump_file')}
           </Text>
-
           <FileSelect fileExtension="*" multiple={false} files={files} setFiles={setFiles} />
 
-          <Text mt="60px" color={'#24282C'} fontSize={'16px'} fontWeight={500}>
-            {t('Target Database')}
-          </Text>
-
           <Flex alignItems={'center'} mt="22px">
-            <Text fontSize={'14px'} fontWeight={400} w="160px" color={'#333333'}>
-              {t('DB Name')}
+            <Text fontSize={'base'} fontWeight={'bold'} minW={'120px'} color={'grayModern.900'}>
+              {t('db_name')}
             </Text>
             <Input
+              width={'380px'}
               maxW={'400px'}
               isInvalid={!!formHook.formState?.errors?.databaseName}
               {...formHook.register('databaseName', {
-                required: t('Database Name Empty') || ''
+                required: t('database_name_empty')
               })}
             />
           </Flex>
           {db?.dbType === 'mongodb' && (
             <Flex alignItems={'center'} mt="22px">
-              <Text fontSize={'14px'} fontWeight={400} w="160px" color={'#333333'}>
-                {t('Collection Name')}
+              <Text fontSize={'base'} fontWeight={'bold'} minW={'120px'} color={'grayModern.900'}>
+                {t('collection_name')}
               </Text>
-              <Input maxW={'400px'} {...formHook.register('collectionName')} />
+              <Input width={'380px'} maxW={'400px'} {...formHook.register('collectionName')} />
             </Flex>
           )}
           <Flex justifyContent={'end'}>
-            <Button mt="40px" w="156px" h={'40px'} variant={'primary'} onClick={onOpen}>
-              {t('Migrate Now')}
+            <Button mt="40px" w={'100px'} h={'32px'} variant={'solid'} onClick={onOpen}>
+              {t('migrate_now')}
             </Button>
           </Flex>
         </Box>
       </Flex>
 
-      <Modal isOpen={isOpen} onClose={closeMigrate} closeOnOverlayClick={false}>
+      <Modal
+        isOpen={isOpen}
+        onClose={closeMigrate}
+        closeOnOverlayClick={false}
+        lockFocusAcrossFrames={false}
+      >
         <ModalOverlay />
         {migrateStatus === MigrateStatusEnum.Prepare && (
           <ModalContent>
-            <ModalHeader>{t('Prompt')}</ModalHeader>
+            <ModalHeader>{t('prompt')}</ModalHeader>
             <ModalBody>
-              <ModalCloseButton />
-              <Flex>
-                <Text> {t('Are you sure to perform database migration')} </Text>
+              <ModalCloseButton top={'10px'} right={'10px'} />
+              <Flex mb={'44px'}>
+                <Text> {t('are_you_sure_to_perform_database_migration')} </Text>
               </Flex>
-              <ModalFooter>
-                <Button colorScheme={'gray'} onClick={closeMigrate}>
+
+              <Flex justifyContent={'flex-end'}>
+                <Button variant={'outline'} onClick={closeMigrate}>
                   {t('Cancel')}
                 </Button>
-                <Button ml={3} variant={'primary'} onClick={handleConfirm}>
-                  {t('Confirm')}
+                <Button ml={3} variant={'solid'} onClick={handleConfirm}>
+                  {t('confirm')}
                 </Button>
-              </ModalFooter>
+              </Flex>
             </ModalBody>
           </ModalContent>
         )}
 
         {migrateStatus === MigrateStatusEnum.Progress && (
           <ModalContent>
+            <ModalCloseButton />
             <ModalBody>
-              <ModalCloseButton />
               <Flex
                 flexDirection={'column'}
                 alignItems={'center'}
@@ -309,7 +282,7 @@ export default function DumpImport({ db }: { db?: DBDetailType }) {
                   {fileProgressText}
                 </Text>
                 <Text fontSize={'14px'} fontWeight={400} color={'#7B838B'}>
-                  {t('Migration prompt information')}
+                  {t('migration_prompt_information')}
                 </Text>
               </Flex>
             </ModalBody>
@@ -332,7 +305,7 @@ export default function DumpImport({ db }: { db?: DBDetailType }) {
                 >
                   <MyIcon name="success" w={'42px'} h="42px"></MyIcon>
                   <Text mt="16px" fontSize={'20px'} fontWeight={500} color={'#24282C'}>
-                    {t('Migration Successful')}
+                    {t('migration_successful')}
                   </Text>
                 </Flex>
               )}
@@ -347,7 +320,7 @@ export default function DumpImport({ db }: { db?: DBDetailType }) {
                 >
                   <MyIcon name="error" w={'42px'} h="42px"></MyIcon>
                   <Text mt="16px" fontSize={'20px'} fontWeight={500} color={'#24282C'}>
-                    {t('Migration Failed')}
+                    {t('migration_failed')}
                   </Text>
                   <Divider mt="44px" mb="24px" />
                   <Text
@@ -355,7 +328,7 @@ export default function DumpImport({ db }: { db?: DBDetailType }) {
                     fontSize={'14px'}
                     fontWeight={400}
                     color={'#7B838B'}
-                    dangerouslySetInnerHTML={{ __html: log ? log : 'Have Error' }}
+                    dangerouslySetInnerHTML={{ __html: log ? log : 'have_error' }}
                   ></Text>
                 </Flex>
               )}

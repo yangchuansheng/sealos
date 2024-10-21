@@ -8,7 +8,8 @@ export enum APPTYPE {
 }
 
 export type WindowSize = 'maximize' | 'maxmin' | 'minimize';
-export type displayType = 'normal' | 'hidden' | 'more ';
+export type displayType = 'normal' | 'hidden' | 'more';
+
 export type TAppFront = {
   isShow: boolean;
   zIndex: number;
@@ -21,6 +22,11 @@ export type TAppFront = {
     bg?: string;
   };
   mouseDowning: boolean;
+};
+
+export type TAppMenuData = {
+  name: string;
+  link: string;
 };
 
 export type TAppConfig = {
@@ -41,12 +47,12 @@ export type TAppConfig = {
   gallery?: string[];
   extra?: {};
   // app top info
-  menuData?: {
-    nameColor: string;
-    helpDropDown: boolean;
-    helpDocs: boolean | string;
+  menuData?: TAppMenuData[];
+  i18n?: {
+    [key: string]: {
+      name: string;
+    };
   };
-  i18n?: any;
   displayType: displayType;
 };
 
@@ -59,9 +65,14 @@ export type TOSState = {
   runningInfo: AppInfo[];
   currentAppPid: number;
   autolaunch: string;
+  autolaunchWorkspaceUid?: string;
   launchQuery: Record<string, string>;
   // store deploy template
-  setAutoLaunch: (autolaunch: string, launchQuery: Record<string, string>) => void;
+  setAutoLaunch: (
+    autolaunch: string,
+    launchQuery: Record<string, string>,
+    autolaunchWorkspaceId?: string
+  ) => void;
   cancelAutoLaunch: () => void;
   // init desktop
   init(): Promise<TOSState>;
@@ -72,10 +83,12 @@ export type TOSState = {
       query?: Record<string, string>;
       raw?: string;
       pathname?: string;
+      appSize?: WindowSize;
     }
   ): Promise<void>;
   // close app
   closeAppById: (pid: number) => void;
+  closeAppAll: () => void;
   // get current runningApp
   currentApp: () => AppInfo | undefined;
   switchAppById: (pid: number) => void;

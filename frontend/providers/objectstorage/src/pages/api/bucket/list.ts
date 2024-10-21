@@ -6,10 +6,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   try {
     const client = await initK8s({ req });
     const k8sRes = await client.k8sCustomObjects.listNamespacedCustomObject(
-      'minio.sealos.io',
+      'objectstorage.sealos.io',
       'v1',
       client.namespace,
-      'buckets'
+      'objectstoragebuckets'
     );
     if (k8sRes.response.statusCode !== 200) throw k8sRes.response.errored;
     const list = (
@@ -18,17 +18,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
           items: BucketCR['output'][];
         };
       }
-    ).body.items.flatMap<TBucket>((v) =>
-      !!v.status
-        ? [
-            {
-              name: v.status.name,
-              crName: v.metadata.name,
-              policy: v.spec.policy
-            }
-          ]
-        : []
-    );
+    ).body.items.flatMap<TBucket>((v) => [
+      {
+        name: `${client.namespace.replace(/^ns-/, '')}-${v.metadata.name}`,
+        crName: v.metadata.name,
+        policy: v.spec.policy,
+        isComplete: !!v.status
+      }
+    ]);
     return jsonRes(res, { data: { list } });
   } catch (err: any) {
     console.log(err);

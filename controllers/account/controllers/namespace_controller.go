@@ -23,6 +23,12 @@ import (
 	"strings"
 	"time"
 
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"github.com/minio/madmin-go/v3"
+
+	v1 "github.com/labring/sealos/controllers/account/api/v1"
+
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
@@ -31,13 +37,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/watch"
 
-	"github.com/go-logr/logr"
-	"github.com/minio/madmin-go/v3"
-
-	v1 "github.com/labring/sealos/controllers/account/api/v1"
-
 	objectstoragev1 "github/labring/sealos/controllers/objectstorage/api/v1"
 
+	kbv1alpha1 "github.com/apecloud/kubeblocks/apis/apps/v1alpha1"
+
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -70,6 +74,10 @@ const (
 //+kubebuilder:rbac:groups=core,resources=namespaces/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=core,resources=namespaces/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=apps.kubeblocks.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=apps.kubeblocks.io,resources=clusters/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=apps.kubeblocks.io,resources=opsrequests,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=apps.kubeblocks.io,resources=opsrequests/status,verbs=get;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -94,16 +102,14 @@ func (r *NamespaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		logger.Error(fmt.Errorf("no debt status"), "no debt status")
 		return ctrl.Result{}, nil
 	}
-	logger.Info("debt status", "status", debtStatus)
+	logger.V(1).Info("debt status", "status", debtStatus)
 	switch debtStatus {
-	case v1.SuspendDebtNamespaceAnnoStatus:
-		logger.Info("suspend namespace resources")
+	case v1.SuspendDebtNamespaceAnnoStatus, v1.TerminateSuspendDebtNamespaceAnnoStatus:
 		if err := r.SuspendUserResource(ctx, req.NamespacedName.Name); err != nil {
 			logger.Error(err, "suspend namespace resources failed")
 			return ctrl.Result{}, err
 		}
 	case v1.ResumeDebtNamespaceAnnoStatus:
-		logger.Info("resume namespace resources")
 		if err := r.ResumeUserResource(ctx, req.NamespacedName.Name); err != nil {
 			logger.Error(err, "resume namespace resources failed")
 			return ctrl.Result{}, err
@@ -130,6 +136,7 @@ func (r *NamespaceReconciler) SuspendUserResource(ctx context.Context, namespace
 	// suspend pod: deploy pod && clone unmanaged pod
 	// delete infra cr
 	pipelines := []func(context.Context, string) error{
+		r.suspendKBCluster,
 		r.suspendOrphanPod,
 		r.limitResourceQuotaCreate,
 		r.deleteControlledPod,
@@ -185,6 +192,33 @@ func GetLimit0ResourceQuota(namespace string) *corev1.ResourceQuota {
 		corev1.ResourceRequestsStorage: resource.MustParse("0"),
 	}
 	return &quota
+}
+
+func (r *NamespaceReconciler) suspendKBCluster(ctx context.Context, namespace string) error {
+	kbClusterList := kbv1alpha1.ClusterList{}
+	if err := r.Client.List(ctx, &kbClusterList, client.InNamespace(namespace)); err != nil {
+		return err
+	}
+	for _, kbCluster := range kbClusterList.Items {
+		if kbCluster.Status.Phase == kbv1alpha1.StoppedClusterPhase || kbCluster.Status.Phase == kbv1alpha1.StoppingClusterPhase {
+			continue
+		}
+		ops := kbv1alpha1.OpsRequest{}
+		ops.Namespace = kbCluster.Namespace
+		ops.ObjectMeta.Name = "stop-" + kbCluster.Name + "-" + time.Now().Format("2006-01-02-15")
+		ops.Spec.TTLSecondsAfterSucceed = 1
+		abort := int32(60 * 60)
+		ops.Spec.TTLSecondsBeforeAbort = &abort
+		ops.Spec.ClusterRef = kbCluster.Name
+		ops.Spec.Type = "Stop"
+		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, &ops, func() error {
+			return nil
+		})
+		if err != nil {
+			r.Log.Error(err, "create ops request failed", "ops", ops.Name, "namespace", ops.Namespace)
+		}
+	}
+	return nil
 }
 
 func (r *NamespaceReconciler) suspendOrphanPod(ctx context.Context, namespace string) error {
@@ -289,7 +323,7 @@ func (r *NamespaceReconciler) resumePod(ctx context.Context, namespace string) e
 
 func (r *NamespaceReconciler) recreatePod(ctx context.Context, oldPod corev1.Pod, newPod *corev1.Pod) error {
 	list := corev1.PodList{}
-	watcher, err := r.Client.Watch(ctx, &list)
+	watcher, err := r.Client.Watch(ctx, &list, client.InNamespace(oldPod.Namespace))
 	if err != nil {
 		return fmt.Errorf("failed to start watch stream for pod %s: %w", oldPod.Name, err)
 	}
@@ -325,9 +359,11 @@ func (r *NamespaceReconciler) suspendObjectStorage(ctx context.Context, namespac
 
 	err := r.setOSUserStatus(ctx, user, Disabled)
 	if err != nil {
-		r.Log.Error(err, "failed to suspend object storage")
+		r.Log.Error(err, "failed to suspend object storage", "user", user)
+		return err
 	}
 
+	//r.Log.Info("suspend object storage", "user", user)
 	return nil
 }
 
@@ -337,9 +373,11 @@ func (r *NamespaceReconciler) resumeObjectStorage(ctx context.Context, namespace
 
 	err := r.setOSUserStatus(ctx, user, Enabled)
 	if err != nil {
-		r.Log.Error(err, "failed to resume object storage")
+		r.Log.Error(err, "failed to resume object storage", "user", user)
+		return err
 	}
 
+	//r.Log.Info("resume object storage", "user", user)
 	return nil
 }
 
@@ -367,7 +405,17 @@ func (r *NamespaceReconciler) setOSUserStatus(ctx context.Context, user string, 
 		r.OSAdminClient = oSAdminClient
 	}
 
-	err := r.OSAdminClient.SetUserStatus(ctx, user, madmin.AccountStatus(status))
+	users, err := r.OSAdminClient.ListUsers(ctx)
+	if err != nil {
+		r.Log.Error(err, "failed to list minio user", "user", user)
+		return err
+	}
+
+	if _, ok := users[user]; !ok {
+		return nil
+	}
+
+	err = r.OSAdminClient.SetUserStatus(ctx, user, madmin.AccountStatus(status))
 	if err != nil {
 		r.Log.Error(err, "failed to set user status", "user", user, "status", status)
 		return err

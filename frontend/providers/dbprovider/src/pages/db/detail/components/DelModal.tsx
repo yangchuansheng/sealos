@@ -1,49 +1,72 @@
-import React, { useState, useCallback } from 'react';
+import { delDBByName } from '@/api/db';
+import MyIcon from '@/components/Icon';
+import { DBSource, DBSourceType } from '@/types/db';
+import { I18nCommonKey } from '@/types/i18next';
 import {
+  Box,
+  Button,
+  Flex,
+  Input,
   Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalFooter,
   ModalBody,
   ModalCloseButton,
-  Input,
-  Box,
-  Button
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalOverlay
 } from '@chakra-ui/react';
-import { delDBByName } from '@/api/db';
-import { useToast } from '@/hooks/useToast';
+import { useMessage } from '@sealos/ui';
 import { useTranslation } from 'next-i18next';
-import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { sealosApp } from 'sealos-desktop-sdk/app';
+
+enum Page {
+  REMINDER = 'REMINDER',
+  DELETION_WARNING = 'DELETION_WARNING'
+}
 
 const DelModal = ({
   dbName,
   onClose,
-  onSuccess
+  onSuccess,
+  source
 }: {
   dbName: string;
   onClose: () => void;
   onSuccess: () => void;
+  source?: DBSource;
 }) => {
-  const queryClient = useQueryClient();
   const { t } = useTranslation();
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
-  const { toast } = useToast();
+  const { message: toast } = useMessage();
+  const [activePage, setActivePage] = useState<Page>(Page.REMINDER);
+  const pageManuallyChangedRef = useRef(false);
+
+  useEffect(() => {
+    if (!pageManuallyChangedRef.current) {
+      source?.hasSource ? setActivePage(Page.REMINDER) : setActivePage(Page.DELETION_WARNING);
+    }
+  }, [source]);
+
+  const deleteTypeTipMap: Record<DBSourceType, I18nCommonKey> = {
+    app_store: t('delete_template_app_tip'),
+    sealaf: t('delete_sealaf_app_tip')
+  };
 
   const handleDelApp = useCallback(async () => {
     try {
       setLoading(true);
       await delDBByName(dbName);
       toast({
-        title: t('Delete successful'),
+        title: t('delete_successful'),
         status: 'success'
       });
       onSuccess();
       onClose();
     } catch (error: any) {
       toast({
-        title: typeof error === 'string' ? error : error.message || t('Delete Failed'),
+        title: typeof error === 'string' ? error : error.message || t('delete_failed'),
         status: 'error'
       });
       console.error(error);
@@ -51,44 +74,93 @@ const DelModal = ({
     setLoading(false);
   }, [dbName, toast, t, onSuccess, onClose]);
 
+  const openTemplateApp = () => {
+    if (!source?.hasSource) return;
+    if (source?.sourceType === 'app_store') {
+      sealosApp.runEvents('openDesktopApp', {
+        appKey: 'system-template',
+        pathname: '/instance',
+        query: { instanceName: source?.sourceName }
+      });
+    }
+    if (source?.sourceType === 'sealaf') {
+      sealosApp.runEvents('openDesktopApp', {
+        appKey: 'system-sealaf',
+        pathname: '/',
+        query: { instanceName: source?.sourceName }
+      });
+    }
+    onClose();
+  };
+
   return (
-    <Modal isOpen onClose={onClose}>
+    <Modal isOpen onClose={onClose} lockFocusAcrossFrames={false}>
       <ModalOverlay />
       <ModalContent>
-        <ModalHeader>{t('Delete Warning')}</ModalHeader>
-        <ModalCloseButton />
+        <ModalHeader>
+          <Flex alignItems={'center'} gap={'10px'}>
+            <MyIcon name="warning" width={'20px'} h={'20px'} />
+            {activePage === Page.REMINDER ? t('remind') : t('delete_warning')}
+          </Flex>
+        </ModalHeader>
+        <ModalCloseButton top={'10px'} right={'10px'} />
         <ModalBody pb={4}>
-          <Box color={'myGray.600'}>
-            {t('Delete Hint')}
-            <Box my={3}>
-              {t('Please Enter')}{' '}
-              <Box as={'span'} color={'myGray.900'} fontWeight={'bold'} userSelect={'all'}>
-                {dbName}
-              </Box>{' '}
-              {t('Confirm')}
-            </Box>
+          <Box color={'grayModern.600'}>
+            {activePage === Page.REMINDER && source?.sourceType
+              ? deleteTypeTipMap[source?.sourceType]
+              : t('delete_hint')}
+
+            {activePage === Page.DELETION_WARNING && (
+              <Box my={3}>
+                {t('please_enter')}
+                <Box
+                  as={'span'}
+                  px={1}
+                  color={'grayModern.900'}
+                  fontWeight={'bold'}
+                  userSelect={'all'}
+                >
+                  {dbName}
+                </Box>
+                {t('confirm')}
+              </Box>
+            )}
           </Box>
 
-          <Input
-            placeholder={`${t('Please Enter')}：${dbName}`}
-            value={inputValue}
-            bg={'myWhite.300'}
-            onChange={(e) => setInputValue(e.target.value)}
-          />
+          {activePage === Page.DELETION_WARNING && (
+            <Input
+              placeholder={`${t('please_enter')}：${dbName}`}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+            />
+          )}
         </ModalBody>
         <ModalFooter>
-          <Button onClick={onClose} variant={'base'}>
+          <Button onClick={onClose} variant={'outline'}>
             {t('Cancel')}
           </Button>
+
+          {activePage === Page.REMINDER && source?.sourceType !== 'sealaf' && (
+            <Button
+              ml={3}
+              variant={'outline'}
+              onClick={() => {
+                setActivePage(Page.DELETION_WARNING);
+                pageManuallyChangedRef.current = true;
+              }}
+            >
+              {t('delete_anyway')}
+            </Button>
+          )}
+
           <Button
-            colorScheme="red"
             ml={3}
             variant={'solid'}
-            isDisabled={inputValue !== dbName}
+            isDisabled={activePage === Page.DELETION_WARNING && inputValue !== dbName}
             isLoading={loading}
-            onClick={handleDelApp}
+            onClick={activePage === Page.REMINDER ? openTemplateApp : handleDelApp}
           >
-            {t('Confirm Delete')}
+            {activePage === Page.REMINDER ? t('confirm_to_go') : t('confirm_delete')}
           </Button>
         </ModalFooter>
       </ModalContent>

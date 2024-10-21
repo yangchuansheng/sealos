@@ -8,15 +8,32 @@ import type { QueryType } from '@/types';
 import { CronJobEditType } from '@/types/job';
 import { sliderNumber2MarkList } from '@/utils/adapt';
 import { obj2Query } from '@/utils/tools';
-import { Box, Flex, FormControl, Icon, Input, Text } from '@chakra-ui/react';
+import {
+  Box,
+  Flex,
+  FormControl,
+  Icon,
+  Input,
+  NumberDecrementStepper,
+  NumberIncrementStepper,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
+  Text,
+  Button,
+  useDisclosure
+} from '@chakra-ui/react';
+import { MyTooltip } from '@sealos/ui';
 import { useQuery } from '@tanstack/react-query';
 import { throttle } from 'lodash';
 import { useTranslation } from 'next-i18next';
 import { useRouter } from 'next/router';
 import { useEffect, useMemo, useState } from 'react';
-import { Controller, UseFormReturn } from 'react-hook-form';
+import { Controller, UseFormReturn, useFieldArray } from 'react-hook-form';
+import styles from './index.module.scss';
 import Cron from './Cron';
 import Label from './Label';
+import EditEnvs from './EditEnvs';
 
 const Form = ({ formHook }: { formHook: UseFormReturn<CronJobEditType, any> }) => {
   if (!formHook) return null;
@@ -25,6 +42,8 @@ const Form = ({ formHook }: { formHook: UseFormReturn<CronJobEditType, any> }) =
   const { name } = router.query as QueryType;
   const isEdit = useMemo(() => !!name, [name]);
   const { data: launchpadApps, refetch } = useQuery(['getLaunchpadApps'], getMyApps);
+  const { isOpen: isEditEnvs, onOpen: onOpenEditEnvs, onClose: onCloseEditEnvs } = useDisclosure();
+
   const {
     register,
     control,
@@ -40,6 +59,11 @@ const Form = ({ formHook }: { formHook: UseFormReturn<CronJobEditType, any> }) =
       icon: 'formInfo'
     }
   ];
+
+  const { fields: envs, replace: replaceEnvs } = useFieldArray({
+    control,
+    name: 'envs'
+  });
 
   const [activeNav, setActiveNav] = useState(navList[0].id);
 
@@ -78,7 +102,7 @@ const Form = ({ formHook }: { formHook: UseFormReturn<CronJobEditType, any> }) =
         gpuAmount: 1
       }),
       memory: sliderNumber2MarkList({
-        val: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384],
+        val: [128, 256, 512, 1024, 2048, 4096, 8192, 16384],
         type: 'memory',
         gpuAmount: 1
       })
@@ -210,7 +234,6 @@ const Form = ({ formHook }: { formHook: UseFormReturn<CronJobEditType, any> }) =
                   width={'300px'}
                   autoComplete="off"
                   backgroundColor={getValues('url') ? 'myWhite.500' : 'myWhite.400'}
-                  // placeholder={`${t('Username for the image registry')}`}
                   {...register('url', {
                     required: true
                   })}
@@ -257,7 +280,7 @@ const Form = ({ formHook }: { formHook: UseFormReturn<CronJobEditType, any> }) =
                         width={'300px'}
                         value={getValues('imageName')}
                         backgroundColor={getValues('imageName') ? 'myWhite.500' : 'myWhite.400'}
-                        placeholder={`${t('Image Name')}`}
+                        placeholder={`${t('Form.Image Name')}`}
                         {...register('imageName', {
                           required: 'Image name cannot be empty.',
                           setValueAs(e) {
@@ -336,7 +359,56 @@ const Form = ({ formHook }: { formHook: UseFormReturn<CronJobEditType, any> }) =
                     />
                   </Box>
                 </FormControl>
+                <Box pl="80px" mb={'18px'}>
+                  <Label w={80}>{t('Form.Environment Variables')}</Label>
+                  <Button
+                    w={'300px'}
+                    variant={'outline'}
+                    fontSize={'base'}
+                    leftIcon={<MyIcon name="edit" width={'16px'} fill={'#485264'} />}
+                    onClick={onOpenEditEnvs}
+                  >
+                    {t('Edit Environment Variables')}
+                  </Button>
+                  <Box mt={3} w={'300px'}>
+                    <table className={'table-cross'}>
+                      <tbody>
+                        {envs.map((env) => {
+                          const valText = env.value
+                            ? env.value
+                            : env.valueFrom
+                            ? 'value from | ***'
+                            : '';
+                          return (
+                            <tr key={env.id}>
+                              <th>{env.key}</th>
+                              <th>
+                                <MyTooltip label={valText}>
+                                  <Box
+                                    className={styles.textEllipsis}
+                                    style={{
+                                      userSelect: 'auto'
+                                    }}
+                                  >
+                                    {valText}
+                                  </Box>
+                                </MyTooltip>
+                              </th>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </Box>
+                </Box>
               </>
+            )}
+            {isEditEnvs && (
+              <EditEnvs
+                defaultEnv={envs}
+                onClose={onCloseEditEnvs}
+                successCb={(e) => replaceEnvs(e)}
+              />
             )}
             {/* cronjob type Launchpad */}
             {getValues('jobType') === 'launchpad' && (
@@ -393,11 +465,11 @@ const Form = ({ formHook }: { formHook: UseFormReturn<CronJobEditType, any> }) =
                 </Box>
 
                 {/* 副本数 */}
-                {/* <Flex mb={'12px'} pl="80px" alignItems={'center'}>
+                <Flex mb={'12px'} pl="80px" alignItems={'center'}>
                   <Text w="60px" fontSize={'12px'} fontWeight={400}>
                     {t('Form.Replicas')}
                   </Text>
-                  <Switch
+                  {/* <Switch
                     ml="8px"
                     size={'md'}
                     colorScheme={'blackAlpha'}
@@ -405,7 +477,7 @@ const Form = ({ formHook }: { formHook: UseFormReturn<CronJobEditType, any> }) =
                     {...register('enableNumberCopies', {
                       onChange: (e) => setValue('enableNumberCopies', e.target.checked)
                     })}
-                  />
+                  /> */}
                 </Flex>
                 <Flex mb={'16px'} alignItems={'center'} pl="80px">
                   <NumberInput
@@ -421,7 +493,7 @@ const Form = ({ formHook }: { formHook: UseFormReturn<CronJobEditType, any> }) =
                       <NumberDecrementStepper />
                     </NumberInputStepper>
                   </NumberInput>
-                </Flex> */}
+                </Flex>
 
                 {/* cpu && memory */}
                 <Flex mb={'16px'} pl="80px">

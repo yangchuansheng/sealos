@@ -1,39 +1,48 @@
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { useRouter } from 'next/router';
-import { Flex, Box } from '@chakra-ui/react';
-import type { YamlItemType } from '@/types';
-import {
-  json2DeployCr,
-  json2Service,
-  json2Ingress,
-  json2ConfigMap,
-  json2Secret,
-  json2HPA
-} from '@/utils/deployYaml2Json';
-import { useForm } from 'react-hook-form';
-import { defaultEditVal, editModeMap } from '@/constants/editApp';
 import { postDeployApp, putApp } from '@/api/app';
+import { checkPermission } from '@/api/platform';
+import { defaultSliderKey } from '@/constants/app';
+import { defaultEditVal, editModeMap } from '@/constants/editApp';
 import { useConfirm } from '@/hooks/useConfirm';
-import type { AppEditType, DeployKindsType } from '@/types/app';
-import { adaptEditAppData } from '@/utils/adapt';
-import { useToast } from '@/hooks/useToast';
-import { useQuery } from '@tanstack/react-query';
-import { useAppStore } from '@/store/app';
+import useDriver from '@/hooks/useDriver';
 import { useLoading } from '@/hooks/useLoading';
+import { useAppStore } from '@/store/app';
 import { useGlobalStore } from '@/store/global';
-import Header from './components/Header';
-import Form from './components/Form';
-import Yaml from './components/Yaml';
-import dynamic from 'next/dynamic';
+import { useUserStore } from '@/store/user';
+import type { YamlItemType } from '@/types';
+import type { AppEditSyncedFields, AppEditType, DeployKindsType } from '@/types/app';
+import { adaptEditAppData } from '@/utils/adapt';
+import {
+  json2ConfigMap,
+  json2DeployCr,
+  json2HPA,
+  json2Ingress,
+  json2Secret,
+  json2Service
+} from '@/utils/deployYaml2Json';
 import { serviceSideProps } from '@/utils/i18n';
 import { getErrText, patchYamlList } from '@/utils/tools';
+import { Box, Flex } from '@chakra-ui/react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'next-i18next';
-import { noGpuSliderKey } from '@/constants/app';
-import { useUserStore } from '@/store/user';
+import dynamic from 'next/dynamic';
+import { useRouter } from 'next/router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import Form from './components/Form';
+import Header from './components/Header';
+import Yaml from './components/Yaml';
+import { useMessage } from '@sealos/ui';
+import { customAlphabet } from 'nanoid';
+
+const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz', 12);
 
 const ErrorModal = dynamic(() => import('./components/ErrorModal'));
 
-export const formData2Yamls = (data: AppEditType) => [
+export const formData2Yamls = (
+  data: AppEditType
+  // handleType: 'edit' | 'create' = 'create',
+  // crYamlList?: DeployKindsType[]
+) => [
   {
     filename: 'service.yaml',
     value: json2Service(data)
@@ -86,18 +95,18 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
   const formOldYamls = useRef<YamlItemType[]>([]);
   const crOldYamls = useRef<DeployKindsType[]>([]);
   const oldAppEditData = useRef<AppEditType>();
-
-  const { toast } = useToast();
+  const { message: toast } = useMessage();
   const { Loading, setIsLoading } = useLoading();
   const router = useRouter();
   const [forceUpdate, setForceUpdate] = useState(false);
   const { setAppDetail } = useAppStore();
   const { screenWidth, formSliderListConfig } = useGlobalStore();
-  const { userSourcePrice, loadUserSourcePrice, checkQuotaAllow, balance } = useUserStore();
+  const { userSourcePrice, loadUserSourcePrice, checkQuotaAllow } = useUserStore();
   const { title, applyBtnText, applyMessage, applySuccess, applyError } = editModeMap(!!appName);
   const [yamlList, setYamlList] = useState<YamlItemType[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [already, setAlready] = useState(false);
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [defaultStorePathList, setDefaultStorePathList] = useState<string[]>([]); // default store will no be edit
   const [defaultGpuSource, setDefaultGpuSource] = useState<AppEditType['gpu']>({
     type: '',
@@ -119,6 +128,8 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
   const formHook = useForm<AppEditType>({
     defaultValues: defaultEditVal
   });
+  const { isGuided, closeGuide } = useDriver({ setIsAdvancedOpen });
+
   const realTimeForm = useRef(defaultEditVal);
 
   // watch form change, compute new yaml
@@ -130,7 +141,7 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
 
   const { refetch: refetchPrice } = useQuery(['init-price'], loadUserSourcePrice, {
     enabled: !!userSourcePrice?.gpu,
-    refetchInterval: 5000
+    refetchInterval: 6000
   });
 
   // add already deployment gpu amount if they exists
@@ -147,26 +158,25 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
     async (yamlList: YamlItemType[]) => {
       setIsLoading(true);
       try {
-        const yamls = yamlList.map((item) => item.value);
+        const parsedNewYamlList = yamlList.map((item) => item.value);
 
         if (appName) {
           const patch = patchYamlList({
-            formOldYamlList: formOldYamls.current.map((item) => item.value),
-            crYamlList: crOldYamls.current,
-            newYamlList: yamls
+            parsedOldYamlList: formOldYamls.current.map((item) => item.value),
+            parsedNewYamlList: parsedNewYamlList,
+            originalYamlList: crOldYamls.current
           });
-          console.log(patch);
-
           await putApp({
             patch,
             appName,
             stateFulSetYaml: yamlList.find((item) => item.filename === 'statefulSet.yaml')?.value
           });
         } else {
-          await postDeployApp(yamls);
+          await postDeployApp(parsedNewYamlList);
         }
 
         router.replace(`/app/detail?name=${formHook.getValues('appName')}`);
+
         toast({
           title: t(applySuccess),
           status: 'success'
@@ -191,13 +201,15 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
       t,
       applySuccess,
       userSourcePrice?.gpu,
-      refetchPrice
+      refetchPrice,
+      isGuided
     ]
   );
+
   const submitError = useCallback(() => {
     // deep search message
     const deepSearch = (obj: any): string => {
-      if (!obj) return t('Submit Error');
+      if (!obj || typeof obj !== 'object') return t('Submit Error');
       if (!!obj.message) {
         return obj.message;
       }
@@ -213,13 +225,13 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
   }, [formHook.formState.errors, t, toast]);
 
   useQuery(
-    ['init'],
+    ['initLaunchpadApp'],
     () => {
       if (!appName) {
         const defaultApp = {
           ...defaultEditVal,
-          cpu: formSliderListConfig[noGpuSliderKey].cpu[0],
-          memory: formSliderListConfig[noGpuSliderKey].memory[0]
+          cpu: formSliderListConfig[defaultSliderKey].cpu[0],
+          memory: formSliderListConfig[defaultSliderKey].memory[0]
         };
         setAlready(true);
         setYamlList([
@@ -241,6 +253,7 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
     {
       onSuccess(res) {
         if (!res) return;
+        console.log(res, 'init res');
         oldAppEditData.current = res;
         formOldYamls.current = formData2Yamls(res);
         crOldYamls.current = res.crYamlList;
@@ -249,6 +262,7 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
         setDefaultGpuSource(res.gpu);
         formHook.reset(adaptEditAppData(res));
         setAlready(true);
+        setYamlList(formData2Yamls(realTimeForm.current));
       },
       onError(err) {
         toast({
@@ -270,6 +284,46 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
     }
   }, [router.query.name, tabType]);
 
+  useEffect(() => {
+    try {
+      const query = router.query as { formData?: string };
+      if (!query.formData) return;
+      const parsedData: Partial<AppEditSyncedFields> = JSON.parse(
+        decodeURIComponent(query.formData)
+      );
+
+      const basicFields: (keyof AppEditSyncedFields)[] = [
+        'imageName',
+        'replicas',
+        'cpu',
+        'memory',
+        'cmdParam',
+        'runCMD',
+        'appName'
+      ];
+
+      basicFields.forEach((field) => {
+        if (parsedData[field] !== undefined) {
+          formHook.setValue(field, parsedData[field] as any);
+        }
+      });
+
+      if (Array.isArray(parsedData.networks)) {
+        const completeNetworks = parsedData.networks.map((network) => ({
+          networkName: network.networkName || `network-${nanoid()}`,
+          portName: network.portName || nanoid(),
+          port: network.port || 80,
+          protocol: network.protocol || 'HTTP',
+          openPublicDomain: network.openPublicDomain || false,
+          publicDomain: network.publicDomain || nanoid(),
+          customDomain: network.customDomain || '',
+          domain: network.domain || 'gzg.sealos.run'
+        }));
+        formHook.setValue('networks', completeNetworks);
+      }
+    } catch (error) {}
+  }, []);
+
   return (
     <>
       <Flex
@@ -277,24 +331,18 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
         alignItems={'center'}
         h={'100%'}
         minWidth={'1024px'}
-        backgroundColor={'#F3F4F5'}
+        backgroundColor={'grayModern.100'}
       >
         <Header
           appName={formHook.getValues('appName')}
           title={title}
           yamlList={yamlList}
           applyBtnText={applyBtnText}
-          applyCb={() =>
-            formHook.handleSubmit((data) => {
+          applyCb={() => {
+            closeGuide();
+            formHook.handleSubmit(async (data) => {
               const parseYamls = formData2Yamls(data);
               setYamlList(parseYamls);
-              // balance check
-              if (balance <= 0) {
-                return toast({
-                  status: 'warning',
-                  title: t('user.Insufficient account balance')
-                });
-              }
 
               // gpu inventory check
               if (data.gpu?.type) {
@@ -326,9 +374,29 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
                 });
               }
 
+              // check permission
+              if (appName) {
+                try {
+                  const result = await checkPermission({
+                    appName: data.appName
+                  });
+                  if (result === 'insufficient_funds') {
+                    return toast({
+                      status: 'warning',
+                      title: t('user.Insufficient account balance')
+                    });
+                  }
+                } catch (error: any) {
+                  return toast({
+                    status: 'warning',
+                    title: error?.message || 'Check Error'
+                  });
+                }
+              }
+
               openConfirm(() => submitSuccess(parseYamls))();
-            }, submitError)()
-          }
+            }, submitError)();
+          }}
         />
 
         <Box flex={'1 0 0'} h={0} w={'100%'} pb={4}>
@@ -340,6 +408,7 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
               countGpuInventory={countGpuInventory}
               pxVal={pxVal}
               refresh={forceUpdate}
+              isAdvancedOpen={isAdvancedOpen}
             />
           ) : (
             <Yaml yamlList={yamlList} pxVal={pxVal} />
@@ -371,10 +440,16 @@ export async function getServerSideProps(content: any) {
 export default EditApp;
 
 function checkNetworkPorts(networks: AppEditType['networks']) {
-  const ports = networks.map((item) => item.port);
-  const portSet = new Set(ports);
-  if (portSet.size !== ports.length) {
-    return false;
+  const portProtocolSet = new Set<string>();
+
+  for (const network of networks) {
+    const { port, protocol } = network;
+    const key = `${port}-${protocol}`;
+    if (portProtocolSet.has(key)) {
+      return false;
+    }
+    portProtocolSet.add(key);
   }
+
   return true;
 }

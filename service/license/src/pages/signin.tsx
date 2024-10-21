@@ -1,4 +1,4 @@
-import SigninComponent from '@/components/Signin';
+import LoginComponent from '@/components/login';
 import useRouteParamsStore from '@/stores/routeParams';
 import useSessionStore from '@/stores/session';
 import { ClusterType } from '@/types';
@@ -13,27 +13,20 @@ export default function SigninPage() {
   const { isUserLogin } = useSessionStore();
 
   useEffect(() => {
-    const { clusterType, external } = router.query;
-    console.log(clusterType, external, '--------');
-    if (external && clusterType) {
-      setRouteParams(external as string, clusterType as ClusterType);
-    }
     if (isUserLogin()) {
       router.push('/pricing');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // handle baidu id
   useEffect(() => {
     const { bd_vid } = router.query;
     if (bd_vid) {
-      sessionStorage.setItem('bd_vid', bd_vid as string);
+      localStorage.setItem('bd_vid', bd_vid as string);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return <SigninComponent />;
+  return <LoginComponent />;
 }
 
 export async function getServerSideProps({ req, res, locales }: any) {

@@ -35,10 +35,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 /public/trainData/
-/.vscode/
 platform.json
 .yalc/
 yalc.lock
 
-FastDeployTemplates
-fast_deploy_template.json
+templates
+templates.json
+data/config.local.json

@@ -21,8 +21,9 @@ import (
 	"flag"
 	"os"
 
-	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
-	// to ensure that exec-entrypoint and run can make use of them.
+	database2 "github.com/labring/sealos/controllers/pkg/database"
+	"github.com/labring/sealos/controllers/pkg/database/cockroach"
+
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -31,10 +32,12 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	accountv1 "github.com/labring/sealos/controllers/account/api/v1"
 	licensev1 "github.com/labring/sealos/controllers/license/api/v1"
 	"github.com/labring/sealos/controllers/license/internal/controller"
+	utilid "github.com/labring/sealos/controllers/license/internal/util/clusterid"
 	"github.com/labring/sealos/controllers/license/internal/util/database"
 	//+kubebuilder:scaffold:imports
 )
@@ -71,9 +74,10 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
+		Scheme: scheme,
+		Metrics: metricsserver.Options{
+			BindAddress: metricsAddr,
+		},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "90cbb0a1.sealos.io",
@@ -101,7 +105,26 @@ func main() {
 	}
 	defer db.Disconnect(context.Background())
 
-	if err = (&controller.LicenseReconciler{}).SetupWithManager(mgr, db); err != nil {
+	clusterID, err := utilid.GetClusterID(mgr.GetConfig())
+	if err != nil {
+		setupLog.Error(err, "unable to get cluster id")
+		os.Exit(1)
+	}
+	setupLog.Info("cluster id", "id", clusterID)
+
+	accountDB, err := cockroach.NewCockRoach(os.Getenv(database2.GlobalCockroachURI), os.Getenv(database2.LocalCockroachURI))
+	if err != nil {
+		setupLog.Error(err, "unable to connect to cockroach")
+		os.Exit(1)
+	}
+	defer func() {
+		err := accountDB.Close()
+		if err != nil {
+			setupLog.Error(err, "unable to disconnect from cockroach")
+		}
+	}()
+
+	if err = (&controller.LicenseReconciler{ClusterID: clusterID}).SetupWithManager(mgr, accountDB); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "License")
 		os.Exit(1)
 	}

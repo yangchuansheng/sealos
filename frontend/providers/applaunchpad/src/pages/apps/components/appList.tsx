@@ -1,24 +1,33 @@
-import React, { useCallback, useMemo, useState } from 'react';
-import { useRouter } from 'next/router';
-import { Box, Button, Flex, MenuButton } from '@chakra-ui/react';
-import { AppListItemType } from '@/types/app';
-import PodLineChart from '@/components/PodLineChart';
+import { pauseAppByName, restartAppByName, startAppByName } from '@/api/app';
 import AppStatusTag from '@/components/AppStatusTag';
-import MyIcon from '@/components/Icon';
-import { useTheme } from '@chakra-ui/react';
-import { useGlobalStore } from '@/store/global';
-import { useToast } from '@/hooks/useToast';
-import { restartAppByName, pauseAppByName, startAppByName } from '@/api/app';
-import { useConfirm } from '@/hooks/useConfirm';
-import { useTranslation } from 'next-i18next';
-import { useUserStore } from '@/store/user';
-
-import dynamic from 'next/dynamic';
-
-import MyMenu from '@/components/Menu';
-import MyTable from '@/components/Table';
 import GPUItem from '@/components/GPUItem';
+import MyIcon from '@/components/Icon';
+import { SealosMenu } from '@sealos/ui';
+import PodLineChart from '@/components/PodLineChart';
+import { MyTable } from '@sealos/ui';
+import { useConfirm } from '@/hooks/useConfirm';
+import { useToast } from '@/hooks/useToast';
+import { useGlobalStore } from '@/store/global';
+import { useUserStore } from '@/store/user';
+import { AppListItemType } from '@/types/app';
 import { getErrText } from '@/utils/tools';
+import {
+  Box,
+  Text,
+  Button,
+  Center,
+  Flex,
+  MenuButton,
+  useTheme,
+  useDisclosure
+} from '@chakra-ui/react';
+import { useTranslation } from 'next-i18next';
+import dynamic from 'next/dynamic';
+import { useRouter } from 'next/router';
+import React, { useCallback, useMemo, useState } from 'react';
+import type { ThemeType } from '@sealos/ui';
+import UpdateModal from '@/pages/app/detail/components/UpdateModal';
+
 const DelModal = dynamic(() => import('@/pages/app/detail/components/DelModal'));
 
 const AppList = ({
@@ -32,13 +41,18 @@ const AppList = ({
   const { setLoading } = useGlobalStore();
   const { userSourcePrice } = useUserStore();
   const { toast } = useToast();
-  const theme = useTheme();
+  const theme = useTheme<ThemeType>();
   const router = useRouter();
-
   const [delAppName, setDelAppName] = useState('');
+  const [updateAppName, setUpdateAppName] = useState('');
   const { openConfirm: onOpenPause, ConfirmChild: PauseChild } = useConfirm({
     content: 'pause_message'
   });
+  const {
+    isOpen: isOpenUpdateModal,
+    onOpen: onOpenUpdateModal,
+    onClose: onCloseUpdateModal
+  } = useDisclosure();
 
   const handleRestartApp = useCallback(
     async (appName: string) => {
@@ -115,7 +129,7 @@ const AppList = ({
   >(
     () => [
       {
-        title: 'Name',
+        title: t('Name'),
         key: 'name',
         render: (item: AppListItemType) => {
           return (
@@ -126,46 +140,74 @@ const AppList = ({
         }
       },
       {
-        title: 'Status',
+        title: t('Status'),
         key: 'status',
         render: (item: AppListItemType) => (
           <AppStatusTag status={item.status} isPause={item.isPause} showBorder={false} />
         )
       },
       {
-        title: 'Creation Time',
+        title: t('Creation Time'),
         dataIndex: 'createTime',
         key: 'createTime'
       },
       {
-        title: 'CPU',
+        title: t('CPU'),
         key: 'cpu',
         render: (item: AppListItemType) => (
           <Box h={'35px'} w={['120px', '130px', '140px']}>
-            <PodLineChart type="blue" limit={item.cpu} data={item.usedCpu.slice(-10)} />
+            <Box h={'35px'} w={['120px', '130px', '140px']} position={'absolute'}>
+              <PodLineChart type="blue" data={item.usedCpu} />
+              <Text
+                color={'#0077A9'}
+                fontSize={'sm'}
+                fontWeight={'bold'}
+                position={'absolute'}
+                right={'4px'}
+                bottom={'0px'}
+                pointerEvents={'none'}
+                textShadow="1px 1px 0 #FFF, -1px -1px 0 #FFF, 1px -1px 0 #FFF, -1px 1px 0 #FFF"
+              >
+                {item?.usedCpu?.yData[item?.usedCpu?.yData?.length - 1]}%
+              </Text>
+            </Box>
           </Box>
         )
       },
       {
-        title: 'Memory',
+        title: t('Memory'),
         key: 'storage',
         render: (item: AppListItemType) => (
           <Box h={'35px'} w={['120px', '130px', '140px']}>
-            <PodLineChart type="purple" limit={item.memory} data={item.useMemory.slice(-10)} />
+            <Box h={'35px'} w={['120px', '130px', '140px']} position={'absolute'}>
+              <PodLineChart type="purple" data={item.usedMemory} />
+              <Text
+                color={'#6F5DD7'}
+                fontSize={'sm'}
+                fontWeight={'bold'}
+                position={'absolute'}
+                right={'4px'}
+                bottom={'0px'}
+                pointerEvents={'none'}
+                textShadow="1px 1px 0 #FFF, -1px -1px 0 #FFF, 1px -1px 0 #FFF, -1px 1px 0 #FFF"
+              >
+                {item?.usedMemory?.yData[item?.usedMemory?.yData?.length - 1]}%
+              </Text>
+            </Box>
           </Box>
         )
       },
       ...(userSourcePrice?.gpu
         ? [
             {
-              title: 'GPU',
+              title: t('GPU'),
               key: 'gpu',
               render: (item: AppListItemType) => <GPUItem gpu={item.gpu} />
             }
           ]
         : []),
       {
-        title: 'Replicas',
+        title: t('Replicas'),
         key: 'activeReplicas',
         render: (item: AppListItemType) => (
           <Flex whiteSpace={'nowrap'}>
@@ -181,38 +223,36 @@ const AppList = ({
         )
       },
       {
-        title: 'Storage',
+        title: t('Storage'),
         key: 'store',
         render: (item: AppListItemType) => (
           <>{item.storeAmount > 0 ? `${item.storeAmount}Gi` : '-'}</>
         )
       },
       {
-        title: 'Operation',
+        title: t('Operation'),
         key: 'control',
         render: (item: AppListItemType) => (
           <Flex>
             <Button
               mr={5}
-              variant={'base'}
-              leftIcon={<MyIcon name={'detail'} transform={'translateY(-1px)'} />}
-              px={3}
+              height={'32px'}
+              size={'sm'}
+              fontSize={'base'}
+              bg={'grayModern.150'}
+              color={'grayModern.900'}
+              _hover={{
+                color: 'brightBlue.600'
+              }}
+              leftIcon={<MyIcon name={'detail'} w={'16px'} h="16px" />}
               onClick={() => router.push(`/app/detail?name=${item.name}`)}
             >
               {t('Details')}
             </Button>
-            <MyMenu
+            <SealosMenu
               width={100}
               Button={
-                <MenuButton
-                  w={'32px'}
-                  h={'32px'}
-                  borderRadius={'sm'}
-                  _hover={{
-                    bg: 'myWhite.400',
-                    color: 'hover.iconBlue'
-                  }}
-                >
+                <MenuButton as={Button} variant={'square'} w={'30px'} h={'30px'}>
                   <MyIcon name={'more'} px={3} />
                 </MenuButton>
               }
@@ -222,8 +262,10 @@ const AppList = ({
                       {
                         child: (
                           <>
-                            <MyIcon name={'continue'} w={'14px'} />
-                            <Box ml={2}>{t('Start Up')}</Box>
+                            <MyIcon name={'continue'} w={'16px'} />
+                            <Box ml={2} fontWeight={'bold'}>
+                              {t('Start Up')}
+                            </Box>
                           </>
                         ),
                         onClick: () => handleStartApp(item.name)
@@ -233,8 +275,10 @@ const AppList = ({
                       {
                         child: (
                           <>
-                            <MyIcon name={'pause'} w={'14px'} />
-                            <Box ml={2}>{t('Pause')}</Box>
+                            <MyIcon name={'pause'} w={'16px'} />
+                            <Box ml={2} fontWeight={'bold'}>
+                              {t('Pause')}
+                            </Box>
                           </>
                         ),
                         onClick: onOpenPause(() => handlePauseApp(item.name))
@@ -242,17 +286,28 @@ const AppList = ({
                       {
                         child: (
                           <>
-                            <MyIcon name={'change'} w={'14px'} />
-                            <Box ml={2}>{t('Update')}</Box>
+                            <MyIcon name={'change'} w={'16px'} />
+                            <Box ml={2} fontWeight={'bold'}>
+                              {t('Update')}
+                            </Box>
                           </>
                         ),
-                        onClick: () => router.push(`/app/edit?name=${item.name}`)
+                        onClick: () => {
+                          if (item.source.hasSource && item.source.sourceType === 'sealaf') {
+                            setUpdateAppName(item.name);
+                            onOpenUpdateModal();
+                          } else {
+                            router.push(`/app/edit?name=${item.name}`);
+                          }
+                        }
                       },
                       {
                         child: (
                           <>
-                            <MyIcon name={'restart'} />
-                            <Box ml={2}>{t('Restart')}</Box>
+                            <MyIcon name={'restart'} w="16px" />
+                            <Box ml={2} fontWeight={'bold'}>
+                              {t('Restart')}
+                            </Box>
                           </>
                         ),
                         onClick: () => handleRestartApp(item.name)
@@ -262,10 +317,18 @@ const AppList = ({
                 {
                   child: (
                     <>
-                      <MyIcon name={'delete'} w={'12px'} />
-                      <Box ml={2}>{t('Delete')}</Box>
+                      <MyIcon name={'delete'} w={'16px'} />
+                      <Box ml={2} fontWeight={'bold'}>
+                        {t('Delete')}
+                      </Box>
                     </>
                   ),
+                  menuItemStyle: {
+                    _hover: {
+                      color: 'red.600',
+                      bg: 'rgba(17, 24, 36, 0.05)'
+                    }
+                  },
                   onClick: () => setDelAppName(item.name)
                 }
               ]}
@@ -278,37 +341,56 @@ const AppList = ({
   );
 
   return (
-    <Box backgroundColor={'#F3F4F5'} px={'34px'} pb={5} minH={'100%'}>
+    <Box backgroundColor={'grayModern.100'} px={'32px'} pb={5} minH={'100%'}>
       <Flex h={'88px'} alignItems={'center'}>
-        <Box mr={4} p={2} backgroundColor={'#FEFEFE'} border={theme.borders.sm} borderRadius={'sm'}>
+        <Center
+          w="46px"
+          h={'46px'}
+          mr={4}
+          backgroundColor={'#FEFEFE'}
+          border={theme.borders[200]}
+          borderRadius={'md'}
+        >
           <MyIcon name="logo" w={'24px'} h={'24px'} />
-        </Box>
-        <Box fontSize={'2xl'} color={'black'}>
+        </Center>
+        <Box fontSize={'xl'} color={'grayModern.900'} fontWeight={'bold'}>
           {t('Applications')}
         </Box>
         {/* <LangSelect /> */}
-        <Box ml={3} color={'gray.500'}>
+        <Box ml={3} color={'grayModern.500'}>
           ( {apps.length} )
         </Box>
         <Box flex={1}></Box>
-
         <Button
-          flex={'0 0 auto'}
-          px={5}
           h={'40px'}
-          colorScheme={'primary'}
-          leftIcon={<MyIcon name={'plus'} w={'12px'} />}
-          variant={'primary'}
+          w={'156px'}
+          flex={'0 0 auto'}
+          leftIcon={<MyIcon name={'plus'} w={'20px'} fill={'#FFF'} />}
           onClick={() => router.push('/app/edit')}
         >
           {t('Create Application')}
         </Button>
       </Flex>
+
       <MyTable itemClass="appItem" columns={columns} data={apps} />
+
       <PauseChild />
       {!!delAppName && (
-        <DelModal appName={delAppName} onClose={() => setDelAppName('')} onSuccess={refetchApps} />
+        <DelModal
+          appName={delAppName}
+          source={apps.find((item) => item.name === delAppName)?.source}
+          onClose={() => setDelAppName('')}
+          onSuccess={refetchApps}
+        />
       )}
+      <UpdateModal
+        source={apps.find((i) => i.name === updateAppName)?.source}
+        isOpen={isOpenUpdateModal}
+        onClose={() => {
+          setUpdateAppName('');
+          onCloseUpdateModal();
+        }}
+      />
     </Box>
   );
 };

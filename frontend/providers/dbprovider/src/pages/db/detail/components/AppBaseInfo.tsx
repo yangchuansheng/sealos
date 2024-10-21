@@ -5,12 +5,12 @@ import {
   getDBServiceByName,
   getDBStatefulSetByName
 } from '@/api/db';
-import { getAppEnv } from '@/api/platform';
 import MyIcon from '@/components/Icon';
-import { DBStatusEnum, DBTypeEnum, DBTypeSecretMap, defaultDBDetail } from '@/constants/db';
-import { useToast } from '@/hooks/useToast';
-import { useDBStore } from '@/store/db';
+import { DBTypeEnum, DBTypeSecretMap, defaultDBDetail } from '@/constants/db';
+import useEnvStore from '@/store/env';
+import { SOURCE_PRICE } from '@/store/static';
 import type { DBDetailType } from '@/types/db';
+import { I18nCommonKey } from '@/types/i18next';
 import { json2NetworkService } from '@/utils/json2Yaml';
 import { printMemory, useCopyData } from '@/utils/tools';
 import {
@@ -26,9 +26,9 @@ import {
   ModalOverlay,
   Switch,
   Text,
-  Tooltip,
   useDisclosure
 } from '@chakra-ui/react';
+import { MyTooltip, SealosCoin, useMessage } from '@sealos/ui';
 import { useQuery } from '@tanstack/react-query';
 import { pick } from 'lodash';
 import { useTranslation } from 'next-i18next';
@@ -38,19 +38,17 @@ import { sealosApp } from 'sealos-desktop-sdk/app';
 const AppBaseInfo = ({ db = defaultDBDetail }: { db: DBDetailType }) => {
   const { t } = useTranslation();
   const { copyData } = useCopyData();
+  const { SystemEnv, initSystemEnv } = useEnvStore();
   const [showSecret, setShowSecret] = useState(false);
   const [isChecked, setIsChecked] = useState(false);
   const { isOpen, onOpen, onClose } = useDisclosure();
-  const { toast } = useToast();
-  const { dbPods } = useDBStore();
+  const { message: toast } = useMessage();
 
   const supportConnectDB = useMemo(() => {
-    return !!['postgresql', 'mongodb', 'apecloud-mysql', 'redis'].find(
+    return !!['postgresql', 'mongodb', 'apecloud-mysql', 'redis', 'milvus', 'kafka'].find(
       (item) => item === db.dbType
     );
   }, [db.dbType]);
-
-  const { data: systemEnvs } = useQuery(['getSystemEnvs'], () => getAppEnv());
 
   const { data: dbStatefulSet } = useQuery(
     ['getDBStatefulSetByName', db.dbName, db.dbType],
@@ -61,7 +59,7 @@ const AppBaseInfo = ({ db = defaultDBDetail }: { db: DBDetailType }) => {
   );
 
   const { data: secret } = useQuery(
-    ['getDBSecret', db.dbName],
+    ['getDBSecret', db.dbName, db.dbType],
     () => (db.dbName ? getDBSecret({ dbName: db.dbName, dbType: db.dbType }) : null),
     {
       enabled: supportConnectDB
@@ -69,7 +67,7 @@ const AppBaseInfo = ({ db = defaultDBDetail }: { db: DBDetailType }) => {
   );
 
   const { data: service, refetch } = useQuery(
-    ['getDBService', db.dbName],
+    ['getDBService', db.dbName, db.dbType],
     () => (db.dbName ? getDBServiceByName(`${db.dbName}-export`) : null),
     {
       enabled: supportConnectDB,
@@ -84,14 +82,14 @@ const AppBaseInfo = ({ db = defaultDBDetail }: { db: DBDetailType }) => {
   );
 
   const externalNetWork = useMemo(() => {
-    const host = `${systemEnvs?.domain}`;
+    const host = `${SystemEnv?.domain}`;
     const port = service?.spec?.ports?.[0]?.nodePort?.toString() || '';
     let connection = `${DBTypeSecretMap[db.dbType].connectKey}://${secret?.username}:${
       secret?.password
     }@${host}:${port}`;
 
     if (db?.dbType === 'mongodb' || db?.dbType === 'postgresql') {
-      connection += '?directConnection=true';
+      connection += '/?directConnection=true';
     }
 
     return {
@@ -99,7 +97,7 @@ const AppBaseInfo = ({ db = defaultDBDetail }: { db: DBDetailType }) => {
       port,
       connection
     };
-  }, [db, secret, service, systemEnvs]);
+  }, [db, secret, service, SystemEnv]);
 
   const [baseSecret, otherSecret] = useMemo(
     () => [pick(secret, ['username', 'password']), pick(secret, ['host', 'port', 'connection'])],
@@ -108,10 +106,10 @@ const AppBaseInfo = ({ db = defaultDBDetail }: { db: DBDetailType }) => {
 
   const appInfoTable = useMemo<
     {
-      name: string;
+      name: I18nCommonKey;
       iconName: string;
       items: {
-        label: string;
+        label: I18nCommonKey;
         value?: string;
         copy?: string;
       }[];
@@ -119,24 +117,24 @@ const AppBaseInfo = ({ db = defaultDBDetail }: { db: DBDetailType }) => {
   >(
     () => [
       {
-        name: 'Basic',
+        name: 'basic',
         iconName: 'info',
         items: [
-          { label: 'Creation Time', value: db.createTime },
-          { label: 'DataBase Type', value: db.dbType },
-          { label: 'Version', value: db.dbVersion }
+          { label: 'creation_time', value: db.createTime },
+          { label: 'database_type', value: db.dbType },
+          { label: 'version', value: db.dbVersion }
         ]
       },
       {
-        name: 'Config Info',
+        name: 'config_info',
         iconName: 'settings',
         items: [
-          { label: 'Limit CPU', value: `${db.cpu / 1000} Core` },
+          { label: 'limit_cpu', value: `${db.cpu / 1000} Core` },
           {
-            label: 'Limit Memory',
+            label: 'limit_memory',
             value: printMemory(db.memory)
           },
-          { label: 'Storage', value: `${db.storage}Gi` }
+          { label: 'storage', value: `${db.storage}Gi` }
         ]
       }
     ],
@@ -153,7 +151,8 @@ const AppBaseInfo = ({ db = defaultDBDetail }: { db: DBDetailType }) => {
       [DBTypeEnum.kafka]: ``,
       [DBTypeEnum.qdrant]: ``,
       [DBTypeEnum.nebula]: ``,
-      [DBTypeEnum.weaviate]: ``
+      [DBTypeEnum.weaviate]: ``,
+      [DBTypeEnum.milvus]: ``
     };
 
     const defaultCommand = commandMap[db.dbType];
@@ -198,12 +197,12 @@ const AppBaseInfo = ({ db = defaultDBDetail }: { db: DBDetailType }) => {
       await delDBServiceByName(`${db.dbName}-export`);
       setIsChecked(false);
       toast({
-        title: t('Successfully closed external network access'),
+        title: t('successfully_closed_external_network_access'),
         status: 'success'
       });
     } catch (error) {
       toast({
-        title: typeof error === 'string' ? error : t('Service Deletion Failed'),
+        title: typeof error === 'string' ? error : t('service_deletion_failed'),
         status: 'error'
       });
     }
@@ -211,18 +210,60 @@ const AppBaseInfo = ({ db = defaultDBDetail }: { db: DBDetailType }) => {
 
   return (
     <Box px={5} py={7} position={'relative'}>
+      {db?.source?.hasSource && (
+        <Box fontSize={'base'}>
+          <Flex alignItems={'center'} gap={'8px'} color={'grayModern.600'} fontWeight={'bold'}>
+            <MyIcon w={'16px'} name={'target'}></MyIcon>
+            <Box>{t('application_source')}</Box>
+          </Flex>
+          <Box mt={'12px'} p={'16px'} backgroundColor={'grayModern.50'} borderRadius={'lg'}>
+            <Flex
+              flexWrap={'wrap'}
+              _notFirst={{
+                mt: 4
+              }}
+              cursor={'pointer'}
+              onClick={() => {
+                if (!db.source.sourceName) return;
+                if (db.source.sourceType === 'app_store') {
+                  sealosApp.runEvents('openDesktopApp', {
+                    appKey: 'system-template',
+                    pathname: '/instance',
+                    query: { instanceName: db.source.sourceName }
+                  });
+                }
+                if (db.source.sourceType === 'sealaf') {
+                  sealosApp.runEvents('openDesktopApp', {
+                    appKey: 'system-sealaf',
+                    pathname: '/',
+                    query: { instanceName: db.source.sourceName }
+                  });
+                }
+              }}
+            >
+              <Box flex={'0 0 110px'} w={0} color={'grayModern.900'}>
+                {t(db.source.sourceType)}
+              </Box>
+              <Box color={'grayModern.600'}>{t('manage_all_resources')}</Box>
+              <MyIcon name="upperRight" width={'14px'} color={'grayModern.600'} />
+            </Flex>
+          </Box>
+        </Box>
+      )}
       {appInfoTable.map((info) => (
         <Box
           _notFirst={{
             mt: 6
           }}
           key={info.name}
+          fontSize={'base'}
         >
-          <Flex alignItems={'center'} color={'myGray.500'}>
+          <Flex alignItems={'center'} gap={'8px'} color={'grayModern.600'} fontWeight={'bold'}>
             <MyIcon w={'16px'} name={info.iconName as any}></MyIcon>
-            <Box ml={2}>{t(info.name)}</Box>
+            <Box>{t(info.name)}</Box>
           </Flex>
-          <Box mt={3} p={4} backgroundColor={'myWhite.400'} borderRadius={'sm'}>
+
+          <Box mt={'12px'} p={'16px'} backgroundColor={'grayModern.50'} borderRadius={'lg'}>
             {info.items.map((item, i) => (
               <Flex
                 key={item.label || i}
@@ -231,17 +272,17 @@ const AppBaseInfo = ({ db = defaultDBDetail }: { db: DBDetailType }) => {
                   mt: 4
                 }}
               >
-                <Box flex={'0 0 110px'} w={0} color={'blackAlpha.800'}>
+                <Box flex={'0 0 110px'} w={0} color={'grayModern.900'}>
                   {t(item.label)}
                 </Box>
                 <Box
-                  color={'blackAlpha.600'}
+                  color={'grayModern.600'}
                   flex={'1 0 0'}
                   textOverflow={'ellipsis'}
                   overflow={'hidden'}
                   whiteSpace={'nowrap'}
                 >
-                  <Tooltip label={item.value}>
+                  <MyTooltip label={item.value}>
                     <Box
                       as="span"
                       cursor={!!item.copy ? 'pointer' : 'default'}
@@ -249,7 +290,7 @@ const AppBaseInfo = ({ db = defaultDBDetail }: { db: DBDetailType }) => {
                     >
                       {item.value}
                     </Box>
-                  </Tooltip>
+                  </MyTooltip>
                 </Box>
               </Flex>
             ))}
@@ -257,84 +298,98 @@ const AppBaseInfo = ({ db = defaultDBDetail }: { db: DBDetailType }) => {
         </Box>
       ))}
       {/* secret */}
-      {secret && db.status.value === DBStatusEnum.Running && (
+      {secret && (
         <>
-          <Flex mt={6} alignItems={'center'} color={'myGray.500'}>
-            <MyIcon w={'16px'} name={'connection'} fill={'#5A646E'}></MyIcon>
-            <Box ml={2}>{t('Connection Info')}</Box>
+          <Flex
+            fontSize={'base'}
+            gap={'8px'}
+            mt={'24px'}
+            alignItems={'center'}
+            color={'grayModern.600'}
+          >
+            <MyIcon w={'16px'} name={'connection'}></MyIcon>
+            <Box fontWeight={'bold'}>{t('connection_info')}</Box>
             <Center
-              ml="12px"
-              h="24px"
-              w="26px"
-              bg="#F4F6F8"
-              borderRadius={'4px'}
+              h="28px"
+              w="28px"
+              bg="grayModern.150"
+              borderRadius={'md'}
               cursor={'pointer'}
               onClick={() => setShowSecret(!showSecret)}
+              _hover={{
+                color: 'brightBlue.600'
+              }}
             >
-              <MyIcon
-                name={showSecret ? 'read' : 'unread'}
-                w={'16px'}
-                color={'myGray.600'}
-              ></MyIcon>
+              <MyIcon name={showSecret ? 'read' : 'unread'} w={'16px'}></MyIcon>
             </Center>
-            <Center
-              ml="12px"
-              h="24px"
-              color={'#24282C'}
-              fontSize={'12px'}
-              bg="#F4F6F8"
-              borderRadius={'4px'}
-              px="8px"
-              cursor={'pointer'}
-              onClick={() => onclickConnectDB()}
-            >
-              <MyIcon name="terminal" w="16px" h="16px" />
-              {t('Direct Connection')}
-            </Center>
-            <Center fontSize={'12px'} fontWeight={400} ml="auto">
-              <Text> {t('External Network')} </Text>
-              <Switch
-                ml="8px"
-                size="sm"
-                isChecked={isChecked}
-                onChange={(e) => (isChecked ? closeNetWorkService() : onOpen())}
-              />
-            </Center>
+            {['milvus', 'kafka'].indexOf(db.dbType) === -1 && (
+              <>
+                <Center
+                  className="driver-detail-terminal-button"
+                  gap={'6px'}
+                  h="28px"
+                  fontSize={'12px'}
+                  bg="grayModern.150"
+                  borderRadius={'md'}
+                  px="8px"
+                  cursor={'pointer'}
+                  fontWeight={'bold'}
+                  onClick={() => onclickConnectDB()}
+                  _hover={{
+                    color: 'brightBlue.600'
+                  }}
+                >
+                  <MyIcon name="terminal" w="16px" h="16px" />
+                  {t('direct_connection')}
+                </Center>
+                <Center ml="auto">
+                  <Text color={'grayModern.900'}> {t('external_network')} </Text>
+                  <Switch
+                    ml="12px"
+                    size="md"
+                    isChecked={isChecked}
+                    onChange={(e) => (isChecked ? closeNetWorkService() : onOpen())}
+                  />
+                </Center>
+              </>
+            )}
           </Flex>
-          <Box
-            mt={3}
-            p={4}
-            backgroundColor={'myWhite.400'}
-            borderRadius={'sm'}
-            position={'relative'}
-          >
-            {Object.entries(baseSecret).map(([name, value]) => (
-              <Box
-                key={name}
-                _notFirst={{
-                  mt: 4
-                }}
-              >
-                <Box color={'myGray.500'}>{name}</Box>
-                <Box color={'myGray.800'}>
-                  <Box as="span" cursor={'pointer'} onClick={() => copyData(value)}>
-                    {showSecret ? value : '***********'}
+          {['milvus', 'kafka'].indexOf(db.dbType) === -1 && (
+            <Box
+              mt={'12px'}
+              p={4}
+              backgroundColor={'grayModern.50'}
+              borderRadius={'lg'}
+              position={'relative'}
+              fontSize={'base'}
+            >
+              {Object.entries(baseSecret).map(([name, value]) => (
+                <Box
+                  key={name}
+                  _notFirst={{
+                    mt: 4
+                  }}
+                >
+                  <Box color={'grayModern.900'}>{name}</Box>
+                  <Box color={'grayModern.600'}>
+                    <Box as="span" cursor={'pointer'} onClick={() => copyData(value)}>
+                      {showSecret ? value : '***********'}
+                    </Box>
                   </Box>
                 </Box>
-              </Box>
-            ))}
-          </Box>
+              ))}
+            </Box>
+          )}
           <Box
-            mt={3}
+            mt={'12px'}
             p={4}
-            backgroundColor={'myWhite.400'}
-            borderRadius={'sm'}
+            backgroundColor={'grayModern.50'}
+            borderRadius={'lg'}
             position={'relative'}
+            fontSize={'base'}
           >
-            <Text fontWeight={500} fontSize={'12px'} color={'#24282C'}>
-              {t('Intranet Address')}
-            </Text>
-            <Divider my="12px" />
+            <Text color={'grayModern.900'}>{t('intranet_address')}</Text>
+            <Divider my="12px" borderColor={'rgb(226, 232, 240)'} />
             {Object.entries(otherSecret).map(([name, value]) => (
               <Box
                 key={name}
@@ -342,8 +397,8 @@ const AppBaseInfo = ({ db = defaultDBDetail }: { db: DBDetailType }) => {
                   mt: 4
                 }}
               >
-                <Box color={'myGray.500'}>{name}</Box>
-                <Box color={'myGray.800'}>
+                <Box color={'grayModern.900'}>{name}</Box>
+                <Box color={'grayModern.600'}>
                   <Box as="span" cursor={'pointer'} onClick={() => copyData(value)}>
                     {showSecret ? value : '***********'}
                   </Box>
@@ -353,15 +408,14 @@ const AppBaseInfo = ({ db = defaultDBDetail }: { db: DBDetailType }) => {
           </Box>
           {isChecked && (
             <Box
-              mt={3}
+              mt={'12px'}
               p={4}
-              backgroundColor={'myWhite.400'}
-              borderRadius={'sm'}
+              backgroundColor={'grayModern.50'}
+              borderRadius={'lg'}
               position={'relative'}
+              fontSize={'base'}
             >
-              <Text fontWeight={500} fontSize={'12px'} color={'#24282C'}>
-                {t('External Address')}
-              </Text>
+              <Text color={'grayModern.900'}>{t('external_address')}</Text>
               <Divider my="12px" />
               {Object.entries(externalNetWork).map(([name, value]) => (
                 <Box
@@ -370,8 +424,8 @@ const AppBaseInfo = ({ db = defaultDBDetail }: { db: DBDetailType }) => {
                     mt: 4
                   }}
                 >
-                  <Box color={'myGray.500'}>{name}</Box>
-                  <Box color={'myGray.800'}>
+                  <Box color={'grayModern.900'}>{name}</Box>
+                  <Box color={'grayModern.600'}>
                     <Box as="span" cursor={'pointer'} onClick={() => copyData(value)}>
                       {showSecret ? value : '***********'}
                     </Box>
@@ -381,11 +435,11 @@ const AppBaseInfo = ({ db = defaultDBDetail }: { db: DBDetailType }) => {
             </Box>
           )}
 
-          <Modal isOpen={isOpen} onClose={onClose}>
+          <Modal isOpen={isOpen} onClose={onClose} lockFocusAcrossFrames={false}>
             <ModalOverlay />
-            <ModalContent>
-              <ModalHeader>{t('Enable external network access')}</ModalHeader>
-              <ModalCloseButton />
+            <ModalContent minW={'430px'}>
+              <ModalHeader height={'48px'}>{t('enable_external_network_access')}</ModalHeader>
+              <ModalCloseButton top={'10px'} right={'10px'} />
               <Flex
                 alignItems={'center'}
                 justifyContent={'center'}
@@ -394,27 +448,22 @@ const AppBaseInfo = ({ db = defaultDBDetail }: { db: DBDetailType }) => {
                 pb="45px"
                 px="40px"
               >
-                <Text fontSize={'16px'} fontWeight={500} color={'#5A646E'}>
-                  {t('Billing Standards')}
+                <Text fontSize={'14px'} fontWeight={500} color={'grayModern.500'}>
+                  {t('billing_standards')}
                 </Text>
                 <Center mt="16px" color={'#24282C'} fontSize={'24px'} fontWeight={600}>
-                  0.5
-                  <MyIcon ml="8px" name="currency" w="32px" h="32px"></MyIcon>/ {t('Hour')}
+                  {SOURCE_PRICE.nodeports}
+                  <SealosCoin ml="8px" mr={'2px'} name="currency" w="20px" h="20px"></SealosCoin> /
+                  {t('Hour')}
                 </Center>
-                <Center
-                  p="8px"
-                  mt="20px"
-                  bg="#EBF7FD"
-                  color={'#1D8CDC'}
-                  cursor={'pointer'}
-                  w="100%"
-                  onClick={() => window.open('https://forum.laf.run/d/1092')}
+                <Button
+                  minW={'100px'}
+                  height={'32px'}
+                  mt="32px"
+                  variant={'solid'}
+                  onClick={openNetWorkService}
                 >
-                  <MyIcon name="infoCircle" w="16px" fill={'#48A7EC'}></MyIcon>
-                  免费方案
-                </Center>
-                <Button mt="32px" variant={'primary'} onClick={openNetWorkService}>
-                  {t('Turn On')}
+                  {t('turn_on')}
                 </Button>
               </Flex>
             </ModalContent>

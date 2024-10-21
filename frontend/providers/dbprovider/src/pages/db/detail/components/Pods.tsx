@@ -1,44 +1,43 @@
-import React, { useState, useCallback } from 'react';
+import { restartPodByName } from '@/api/db';
+import MyIcon from '@/components/Icon';
+import PodStatus from '@/components/PodStatus';
+import { useConfirm } from '@/hooks/useConfirm';
+import { useLoading } from '@/hooks/useLoading';
+import { useDBStore } from '@/store/db';
+import type { PodDetailType } from '@/types/db';
+import { I18nCommonKey } from '@/types/i18next';
 import {
   Box,
   Button,
-  Table,
-  Thead,
-  Tbody,
-  Tr,
-  Th,
-  Td,
-  TableContainer,
   Flex,
-  MenuButton
+  Table,
+  TableContainer,
+  Tbody,
+  Td,
+  Th,
+  Thead,
+  Tr
 } from '@chakra-ui/react';
-import { restartPodByName } from '@/api/db';
-import type { PodDetailType } from '@/types/db';
-import { useLoading } from '@/hooks/useLoading';
-import { useToast } from '@/hooks/useToast';
-import dynamic from 'next/dynamic';
-import { PodStatusEnum } from '@/constants/db';
-import { useConfirm } from '@/hooks/useConfirm';
+import { MyTooltip, useMessage } from '@sealos/ui';
 import { useQuery } from '@tanstack/react-query';
-import { useDBStore } from '@/store/db';
-import MyMenu from '@/components/Menu';
-import MyIcon from '@/components/Icon';
 import { useTranslation } from 'next-i18next';
-import PodStatus from '@/components/PodStatus';
+import dynamic from 'next/dynamic';
+import React, { useCallback, useState } from 'react';
 
 const LogsModal = dynamic(() => import('./LogsModal'), { ssr: false });
 const DetailModel = dynamic(() => import('./PodDetailModal'), { ssr: false });
 
 const Pods = ({ dbName, dbType }: { dbName: string; dbType: string }) => {
   const { t } = useTranslation();
-  const { toast } = useToast();
+  const { message: toast } = useMessage();
   const [logsPodIndex, setLogsPodIndex] = useState<number>();
   const [detailPodIndex, setDetailPodIndex] = useState<number>();
   const { Loading } = useLoading();
   const { openConfirm: openConfirmRestart, ConfirmChild: RestartConfirmChild } = useConfirm({
-    content: t('Confirm Restart Pod') || 'Confirm Restart Pod'
+    content: t('confirm_restart_pod')
   });
   const { intervalLoadPods, dbPods } = useDBStore();
+  const closeFn = useCallback(() => setLogsPodIndex(undefined), [setLogsPodIndex]);
 
   const handleRestartPod = useCallback(
     async (podName: string) => {
@@ -50,16 +49,17 @@ const Pods = ({ dbName, dbType }: { dbName: string; dbType: string }) => {
         });
       } catch (err) {
         toast({
-          title: `${t('Restart')} ${podName} ${t('Have Error')}`,
+          title: `${t('Restart')} ${podName} ${t('have_error')}`,
           status: 'warning'
         });
       }
     },
     [t, toast]
   );
+  // console.log(dbPods);
 
   const columns: {
-    title: string;
+    title: I18nCommonKey;
     dataIndex?: keyof PodDetailType;
     key: string;
     render?: (item: PodDetailType, i: number) => JSX.Element | string;
@@ -67,7 +67,7 @@ const Pods = ({ dbName, dbType }: { dbName: string; dbType: string }) => {
     {
       title: 'Pod Name',
       key: 'podName',
-      dataIndex: 'podName'
+      render: (item: PodDetailType) => <Box fontWeight={'bold'}>{item.podName}</Box>
     },
     {
       title: 'Containers',
@@ -75,65 +75,38 @@ const Pods = ({ dbName, dbType }: { dbName: string; dbType: string }) => {
       render: (item: PodDetailType) => <PodStatus containerStatuses={item.status} />
     },
     {
-      title: 'Restarts',
+      title: 'restarts',
       key: 'restarts',
       dataIndex: 'restarts'
     },
     {
-      title: 'Age',
+      title: 'age',
       key: 'age',
       dataIndex: 'age'
     },
     {
-      title: 'Operation',
+      title: 'operation',
       key: 'control',
       render: (item: PodDetailType, i: number) => (
-        <Flex>
-          <Button
-            mr={3}
-            leftIcon={<MyIcon name="detail" />}
-            variant={'base'}
-            px={3}
-            onClick={() => setDetailPodIndex(i)}
-          >
-            {t('Details')}
-          </Button>
-          <MyMenu
-            width={100}
-            Button={
-              <MenuButton
-                w={'32px'}
-                h={'32px'}
-                borderRadius={'sm'}
-                _hover={{
-                  bg: 'myWhite.400',
-                  color: 'hover.iconBlue'
-                }}
-              >
-                <MyIcon name={'more'} px={3} />
-              </MenuButton>
-            }
-            menuList={[
-              {
-                child: (
-                  <>
-                    <MyIcon name={'log'} w={'14px'} />
-                    <Box ml={2}>{t('Logs')}</Box>
-                  </>
-                ),
-                onClick: () => setLogsPodIndex(i)
-              },
-              {
-                child: (
-                  <>
-                    <MyIcon name={'restart'} />
-                    <Box ml={2}>{t('Restart')}</Box>
-                  </>
-                ),
-                onClick: openConfirmRestart(() => handleRestartPod(item.podName))
-              }
-            ]}
-          />
+        <Flex alignItems={'center'} gap={'4px'}>
+          <MyTooltip offset={[0, 10]} label={t('details')}>
+            <Button variant={'square'} onClick={() => setDetailPodIndex(i)}>
+              <MyIcon name={'detail'} w="18px" h="18px" fill={'#485264'} />
+            </Button>
+          </MyTooltip>
+          <MyTooltip label={t('Logs')} offset={[0, 10]}>
+            <Button variant={'square'} onClick={() => setLogsPodIndex(i)}>
+              <MyIcon name="log" w="18px" h="18px" fill={'#485264'} />
+            </Button>
+          </MyTooltip>
+          <MyTooltip offset={[0, 10]} label={t('Restart')}>
+            <Button
+              variant={'square'}
+              onClick={openConfirmRestart(() => handleRestartPod(item.podName))}
+            >
+              <MyIcon name={'restart'} w="18px" h="18px" fill={'#485264'} />
+            </Button>
+          </MyTooltip>
         </Flex>
       )
     }
@@ -146,7 +119,7 @@ const Pods = ({ dbName, dbType }: { dbName: string; dbType: string }) => {
   return (
     <Box h={'100%'} position={'relative'} overflowY={'auto'}>
       <TableContainer overflow={'overlay'}>
-        <Table variant={'simple'} backgroundColor={'white'}>
+        <Table variant={'simple'} backgroundColor={'white'} fontSize={'base'}>
           <Thead>
             <Tr>
               {columns.map((item) => (
@@ -155,8 +128,9 @@ const Pods = ({ dbName, dbType }: { dbName: string; dbType: string }) => {
                   py={4}
                   key={item.key}
                   border={'none'}
-                  backgroundColor={'#F8F8FA'}
+                  backgroundColor={'grayModern.50'}
                   fontWeight={'500'}
+                  color={'grayModern.600'}
                 >
                   {t(item.title)}
                 </Th>
@@ -195,7 +169,7 @@ const Pods = ({ dbName, dbType }: { dbName: string; dbType: string }) => {
           setLogsPodName={(name: string) =>
             setLogsPodIndex(dbPods.findIndex((item) => item.podName === name))
           }
-          closeFn={() => setLogsPodIndex(undefined)}
+          closeFn={closeFn}
         />
       )}
       {detailPodIndex !== undefined && (

@@ -1,30 +1,24 @@
-import bar_icon from '@/assert/bar_chart_4_bars_black.svg';
-import SelectRange from '@/components/billing/selectDateRange';
+import { Buget } from '@/components/cost_overview/buget';
+import GiftCode from '@/components/cost_overview/components/GiftCode';
+import UserCard from '@/components/cost_overview/components/user';
+import { Trend } from '@/components/cost_overview/trend';
+import { TrendBar } from '@/components/cost_overview/trendBar';
 import useNotEnough from '@/hooks/useNotEnough';
-import { Box, Flex, Heading, Img, useToast } from '@chakra-ui/react';
+import request from '@/service/request';
+import useOverviewStore from '@/stores/overview';
+import { ApiResp } from '@/types';
+import { Box, Flex, useToast } from '@chakra-ui/react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'next-i18next';
 import { serverSideTranslations } from 'next-i18next/serverSideTranslations';
-import { MutableRefObject, createContext, useEffect, useRef } from 'react';
-import { Buget } from '@/components/cost_overview/buget';
-import UserCard from '@/components/cost_overview/components/user';
-import { Cost } from '@/components/cost_overview/cost';
-import { Trend } from '@/components/cost_overview/trend';
-import { getCookie } from '@/utils/cookieUtils';
-import useBillingData from '@/hooks/useBillingData';
-import NotFound from '@/components/notFound';
 import { useRouter } from 'next/router';
-import useOverviewStore from '@/stores/overview';
-import { CommonBillingTable } from '@/components/billing/billingTable';
-
+import { MutableRefObject, createContext, useEffect, useRef } from 'react';
 export const RechargeContext = createContext<{ rechargeRef: MutableRefObject<any> | null }>({
   rechargeRef: null
 });
+
 function CostOverview() {
-  const { t, i18n } = useTranslation();
-  const cookie = getCookie('NEXT_LOCALE');
-  useEffect(() => {
-    i18n.changeLanguage(cookie);
-  }, [cookie, i18n]);
+  const { t } = useTranslation();
   const setRecharge = useOverviewStore((s) => s.setRecharge);
   const router = useRouter();
   useEffect(() => {
@@ -56,54 +50,44 @@ function CostOverview() {
     }
   }, []);
   const { NotEnoughModal } = useNotEnough();
-  const { data, isInitialLoading } = useBillingData();
-  const costBillingItems = data?.data?.status.item.filter((v) => v.type === 0) || [];
-  const billingItems = costBillingItems.filter((_v, i) => i < 3) || [];
   const totast = useToast();
   const rechargeRef = useRef<any>();
+  const { data: balance_raw } = useQuery({
+    queryKey: ['getAccount'],
+    queryFn: () =>
+      request.post<any, ApiResp<{ deductionBalance: number; balance: number }>>(
+        '/api/account/getAmount'
+      ),
+    staleTime: 0
+  });
+
+  let rechargAmount = balance_raw?.data?.balance || 0;
+  let expenditureAmount = balance_raw?.data?.deductionBalance || 0;
+  let balance = rechargAmount - expenditureAmount;
   return (
     <RechargeContext.Provider value={{ rechargeRef }}>
-      <Flex h={'100%'}>
-        <Flex
-          bg="white"
-          p="24px"
-          borderRadius="8px"
-          direction="column"
-          flexGrow={'1'}
-          flex={'1'}
-          overflowY={'auto'}
-        >
-          <Flex wrap={'wrap'}>
-            <Flex mb={'24px'} mr="24px" align={'center'}>
-              <Img src={bar_icon.src} w={'24px'} h={'24px'} mr="18px"></Img>
-              <Heading size="lg">{t('SideBar.CostOverview')} </Heading>
-            </Flex>
-            <Box mb={'24px'}>
-              <SelectRange isDisabled={false}></SelectRange>
-            </Box>
-          </Flex>
-
-          <Flex flexDirection={'column'} flex={'auto'}>
+      <Flex h={'100%'} p={'8px'}>
+        <Flex direction="column" flexGrow={'1'} flex={'1'} overflowY={'auto'}>
+          <Flex flexDirection={'column'} flex={'auto'} gap={'12px'}>
             <Box borderRadius="12px" display={['block', 'block', 'block', 'none']}>
               <Flex direction={['column', 'column', 'row', 'row']} justify={'space-between'}>
                 <Box alignSelf={'center'}>
-                  <UserCard />
+                  <UserCard balance={balance} />
                 </Box>
-                <Buget></Buget>
+                <Buget expenditureAmount={expenditureAmount}></Buget>
               </Flex>
-              <Cost></Cost>
             </Box>
-            <Trend></Trend>
-            <Flex direction={'column'} h={'0'} flex={[1, null, null, 'auto']}>
-              <Heading size={'sm'} mb={'36px'}>
-                {t('Recent Transactions')}
-              </Heading>
-              <CommonBillingTable data={billingItems} />
-              {(isInitialLoading || billingItems.length === 0) && (
-                <Flex h="160px" justify={'center'} align={'center'}>
-                  <NotFound></NotFound>
-                </Flex>
-              )}
+            <Flex w={'full'} borderRadius="8px" bg="white" p="24px">
+              <Trend></Trend>
+            </Flex>
+            <Flex
+              direction={'column'}
+              flex={[1, null, null, 'auto']}
+              bg="white"
+              p="24px"
+              borderRadius="8px"
+            >
+              <TrendBar />
             </Flex>
           </Flex>
         </Flex>
@@ -118,10 +102,11 @@ function CostOverview() {
           display={['none', 'none', 'none', 'flex']}
           direction={'column'}
           justify={'flex-start'}
+          gap="28px"
         >
-          <UserCard />
-          <Buget></Buget>
-          <Cost></Cost>
+          <UserCard balance={balance} />
+          <GiftCode />
+          <Buget expenditureAmount={expenditureAmount}></Buget>
         </Flex>
       </Flex>
       <NotEnoughModal></NotEnoughModal>
@@ -129,11 +114,10 @@ function CostOverview() {
   );
 }
 
-export async function getServerSideProps(content: any) {
-  const locale = content?.req?.cookies?.NEXT_LOCALE || 'zh';
+export async function getServerSideProps({ locale }: { locale: string }) {
   return {
     props: {
-      ...(await serverSideTranslations(locale, undefined, null, content.locales))
+      ...(await serverSideTranslations(locale, undefined, null, ['zh', 'en']))
     }
   };
 }

@@ -1,42 +1,29 @@
-import { TableHeaderID } from '@/constants/billing';
-import { BillingItem, BillingType } from '@/types/billing';
 import lineDown from '@/assert/lineDown.svg';
 import lineUp from '@/assert/lineUp.svg';
-import {
-  Box,
-  Flex,
-  Img,
-  Table,
-  TableContainer,
-  TableContainerProps,
-  Tbody,
-  Td,
-  Text,
-  Th,
-  Thead,
-  Tr
-} from '@chakra-ui/react';
-import { format, parseISO } from 'date-fns';
-import { formatMoney } from '@/utils/format';
-import { useTranslation } from 'next-i18next';
+import Amount from '@/components/billing/AmountTableHeader';
+import { TableHeaderID } from '@/constants/billing';
 import useEnvStore from '@/stores/env';
-import CurrencySymbol from '../CurrencySymbol';
-import BillingDetails from './billingDetails';
+import useSessionStore from '@/stores/session';
+import { BillingItem, BillingType, TransferBilling } from '@/types/billing';
+import { Box, Flex, Img, TableContainerProps, Text } from '@chakra-ui/react';
 import {
-  useReactTable,
-  getCoreRowModel,
-  createColumnHelper,
-  flexRender,
-  HeaderContext,
   CellContext,
-  Table as TTable
+  HeaderContext,
+  createColumnHelper,
+  getCoreRowModel,
+  useReactTable
 } from '@tanstack/react-table';
+import { format, parseISO } from 'date-fns';
+import { useTranslation } from 'next-i18next';
 import { useMemo } from 'react';
-import { enableGpu } from '@/service/enabled';
+import CurrencySymbol from '../CurrencySymbol';
+import { BaseTable } from '../table/BaseTable';
+import BillingDetails from './billingDetails';
 export function CommonBillingTable({
   data,
+  isOverview = false,
   ...styles
-}: { data: BillingItem[] } & TableContainerProps) {
+}: { data: BillingItem[]; isOverview?: boolean } & TableContainerProps) {
   const { t } = useTranslation();
   const gpuEnabled = useEnvStore((state) => state.gpuEnabled);
   const currency = useEnvStore((s) => s.currency);
@@ -47,7 +34,11 @@ export function CommonBillingTable({
         return (
           <Flex display={'flex'} alignItems={'center'}>
             <Text mr="4px">{t(header.id)}</Text>
-            {!!needCurrency && <CurrencySymbol type={currency} />}
+            {!!needCurrency && (
+              <Text>
+                <CurrencySymbol type={currency} />
+              </Text>
+            )}
           </Flex>
         );
       };
@@ -96,41 +87,41 @@ export function CommonBillingTable({
       }),
       columnHelper.accessor((row) => row.costs.cpu, {
         id: TableHeaderID.CPU,
-        header: customTh(true),
+        header: customTh(),
         cell: customCell()
       }),
       columnHelper.accessor((row) => row.costs.memory, {
         id: TableHeaderID.Memory,
-        header: customTh(true),
+        header: customTh(),
         cell: customCell()
       }),
       columnHelper.accessor((row) => row.costs.network, {
         id: TableHeaderID.Network,
-        header: customTh(true),
+        header: customTh(),
         cell: customCell()
       }),
       columnHelper.accessor((row) => row.costs.storage, {
         id: TableHeaderID.Storage,
-        header: customTh(true),
+        header: customTh(),
         cell: customCell()
       }),
       columnHelper.accessor((row) => row.costs.port, {
         id: TableHeaderID.Port,
-        header: customTh(true),
+        header: customTh(),
         cell: customCell()
       }),
       ...(gpuEnabled
         ? [
             columnHelper.accessor((row) => row.costs.gpu, {
               id: TableHeaderID.GPU,
-              header: customTh(true),
+              header: customTh(),
               cell: customCell()
             })
           ]
         : []),
       columnHelper.accessor((row) => row.amount, {
         id: TableHeaderID.TotalAmount,
-        header: customTh(true),
+        header: customTh(!isOverview),
         cell: customCell(true)
       }),
       columnHelper.display({
@@ -152,7 +143,7 @@ export function CommonBillingTable({
         }
       })
     ];
-  }, [enableGpu, t, currency]);
+  }, [useEnvStore.getState().gpuEnabled, t, currency]);
   const table = useReactTable({
     data,
     state: {
@@ -166,40 +157,44 @@ export function CommonBillingTable({
   });
   return <BaseTable table={table} {...styles} />;
 }
-export function TransferBillingTable({ data }: { data: BillingItem[] }) {
+
+export function TransferBillingTable({ data }: { data: TransferBilling[] }) {
   const { t } = useTranslation();
   const currency = useEnvStore((s) => s.currency);
+  const { session } = useSessionStore();
+  const user = session.user;
+
   const columns = useMemo(() => {
-    const columnHelper = createColumnHelper<BillingItem>();
+    const columnHelper = createColumnHelper<TransferBilling>();
     const customTh = (needCurrency?: boolean) =>
-      function CustomTh({ header }: HeaderContext<BillingItem, unknown>) {
+      function CustomTh({ header }: HeaderContext<TransferBilling, unknown>) {
         return (
           <Flex display={'flex'} alignItems={'center'}>
             <Text mr="4px">{t(header.id)}</Text>
-            {!!needCurrency && <CurrencySymbol type={currency} />}
+            {!!needCurrency && (
+              <Text>
+                <CurrencySymbol type={currency} />
+              </Text>
+            )}
           </Flex>
         );
       };
     return [
-      columnHelper.accessor((row) => row.order_id, {
+      columnHelper.accessor((row) => row.ID, {
         header: customTh(),
         id: TableHeaderID.OrderNumber,
-        enablePinning: true,
         cell(props) {
           const item = props.row.original;
           return (
             <Box>
               <Text color={'#24282C'} fontSize={'12px'}>
-                {item.order_id}
-              </Text>
-              <Text fontSize={'10px'} color={'#5A646E'}>
-                {item.namespace}
+                {item.ID}
               </Text>
             </Box>
           );
         }
       }),
-      columnHelper.accessor((row) => row.time, {
+      columnHelper.accessor((row) => row.CreatedAt, {
         header: customTh(),
         id: TableHeaderID.TransactionTime,
         enablePinning: true,
@@ -207,18 +202,29 @@ export function TransferBillingTable({ data }: { data: BillingItem[] }) {
           return format(parseISO(props.cell.getValue()), 'MM-dd HH:mm');
         }
       }),
-      columnHelper.accessor((row) => row.appType, {
-        id: TableHeaderID.APPType,
-        header: customTh(true),
+      columnHelper.accessor((row) => [row.FromUserID, row.ToUserID], {
+        header: customTh(),
+        id: TableHeaderID.TraderID,
         cell(props) {
           const item = props.row.original;
+          const traderId = item.ToUserID === user.id ? item.FromUserID : item.ToUserID;
+          return traderId;
+        }
+      }),
+      columnHelper.accessor((row) => [row.ToUserID, row.FromUserID], {
+        id: TableHeaderID.TransferType,
+        header: customTh(),
+        cell(props) {
+          const item = props.row.original;
+          const billingType =
+            item.ToUserID === user.id ? BillingType.RECEIVE : BillingType.TRANSFER;
           return (
             <Flex align={'center'} width={'full'} height={'full'}>
               <Flex
                 px={'12px'}
                 py={'4px'}
                 minW={'max-content'}
-                {...(item.type === BillingType.RECEIVE
+                {...(billingType === BillingType.RECEIVE
                   ? {
                       bg: '#E6F6F6',
                       color: '#00A9A6'
@@ -232,43 +238,31 @@ export function TransferBillingTable({ data }: { data: BillingItem[] }) {
                 justify={'space-evenly'}
               >
                 <Img
-                  src={item.type === BillingType.TRANSFER ? lineDown.src : lineUp.src}
+                  src={billingType === BillingType.TRANSFER ? lineDown.src : lineUp.src}
                   w="13.14px"
                   mr={'6px'}
                 ></Img>
-                <Text>{item.type === BillingType.RECEIVE ? t('Recipient') : t('Transfer')}</Text>
+                <Text>{billingType === BillingType.RECEIVE ? t('Recipient') : t('Transfer')}</Text>
               </Flex>
             </Flex>
           );
         }
       }),
-      columnHelper.accessor((row) => row.amount, {
-        header: customTh(),
+      columnHelper.accessor((row) => row.Amount, {
+        header: customTh(true),
         id: TableHeaderID.TotalAmount,
         cell(props) {
-          const original = props.row.original;
-          return <Amount total={true} type={original.type} amount={props.cell.getValue()} />;
-        }
-      }),
-      columnHelper.accessor((row) => row.namespace, {
-        id: TableHeaderID.Namespace,
-        header: customTh(),
-        cell(props) {
-          const item = props.cell.getValue();
-          return <span>{item}</span>;
+          const item = props.row.original;
+          const billingType =
+            item.ToUserID === user.id ? BillingType.RECEIVE : BillingType.TRANSFER;
+          return <Amount total={true} type={billingType} amount={props.cell.getValue()} />;
         }
       })
     ];
-  }, [enableGpu, t, currency]);
+  }, [useEnvStore.getState().gpuEnabled, t, currency, user]);
 
   const table = useReactTable({
     data,
-    state: {
-      columnPinning: {
-        left: [TableHeaderID.OrderNumber],
-        right: [TableHeaderID.Namespace]
-      }
-    },
     columns,
     getCoreRowModel: getCoreRowModel()
   });
@@ -289,7 +283,11 @@ export function BillingDetailsTable({
         return (
           <Flex display={'flex'} alignItems={'center'}>
             <Text mr="4px">{t(header.id)}</Text>
-            {!!needCurrency && <CurrencySymbol type={currency} />}
+            {!!needCurrency && (
+              <Text>
+                <CurrencySymbol type={currency} />
+              </Text>
+            )}
           </Flex>
         );
       };
@@ -306,34 +304,34 @@ export function BillingDetailsTable({
       }),
       columnHelper.accessor((row) => row.costs.cpu, {
         id: TableHeaderID.CPU,
-        header: customTh(true),
+        header: customTh(),
         cell: customCell()
       }),
       columnHelper.accessor((row) => row.costs.memory, {
         id: TableHeaderID.Memory,
-        header: customTh(true),
+        header: customTh(),
         cell: customCell()
       }),
       columnHelper.accessor((row) => row.costs.network, {
         id: TableHeaderID.Network,
-        header: customTh(true),
+        header: customTh(),
         cell: customCell()
       }),
       columnHelper.accessor((row) => row.costs.storage, {
         id: TableHeaderID.Storage,
-        header: customTh(true),
+        header: customTh(),
         cell: customCell()
       }),
       columnHelper.accessor((row) => row.costs.port, {
         id: TableHeaderID.Port,
-        header: customTh(true),
+        header: customTh(),
         cell: customCell()
       }),
       ...(gpuEnabled
         ? [
             columnHelper.accessor((row) => row.costs.gpu, {
               id: TableHeaderID.GPU,
-              header: customTh(true),
+              header: customTh(),
               cell: customCell()
             })
           ]
@@ -344,7 +342,7 @@ export function BillingDetailsTable({
         cell: customCell(true)
       })
     ];
-  }, [enableGpu, t, currency]);
+  }, [useEnvStore.getState().gpuEnabled, t, currency]);
   const table = useReactTable({
     data,
     state: {
@@ -358,132 +356,3 @@ export function BillingDetailsTable({
   });
   return <BaseTable table={table} h="auto" {...styles} />;
 }
-const Amount = ({
-  type,
-  amount,
-  total
-}: {
-  type: BillingType;
-  amount: number | undefined | null;
-  total?: boolean;
-}) => {
-  if (amount === undefined || amount === null) return <span>-</span>;
-  if (amount === 0) return <span>0</span>;
-  if ([BillingType.CONSUME, BillingType.TRANSFER].includes(type))
-    return <Text color={total ? '#0884DD' : ''}>-{formatMoney(amount)}</Text>;
-  else if ([BillingType.RECHARGE, BillingType.RECEIVE].includes(type))
-    return <Text color={total ? '#00A9A6' : ''}>+{formatMoney(amount)}</Text>;
-  else return <span>-</span>;
-};
-const BaseTable = <T extends unknown>({
-  table,
-  ...styles
-}: { table: TTable<T> } & TableContainerProps) => {
-  console.log(table.getColumn(TableHeaderID.TotalAmount)?.getPinnedIndex());
-  return (
-    <TableContainer w="100%" mt="0px" flex={'1'} h="0" overflowY={'auto'} {...styles}>
-      <Table variant="simple" fontSize={'12px'} width={'full'}>
-        <Thead>
-          {table.getHeaderGroups().map((headers) => {
-            return (
-              <Tr key={headers.id}>
-                {headers.headers.map((header) => {
-                  const pinState = header.column.getIsPinned();
-                  return (
-                    <Th
-                      p="14px"
-                      top={'0'}
-                      {...(!pinState
-                        ? {
-                            zIndex: 3
-                          }
-                        : {
-                            [pinState]: 0,
-                            _after: {
-                              content: '""',
-                              position: 'absolute',
-                              top: 0,
-                              bottom: '-1px',
-                              width: '30px',
-                              ...(pinState === 'right'
-                                ? {
-                                    right: '100%',
-                                    boxShadow: 'rgba(5, 5, 5, 0.06) -10px 0px 8px -8px inset'
-                                  }
-                                : {
-                                    left: '100%',
-                                    boxShadow: 'rgba(5, 5, 5, 0.06) 10px 0px 8px -8px inset'
-                                  })
-                            },
-                            bgColor: 'white',
-                            zIndex: 4
-                          })}
-                      position={'sticky'}
-                      key={header.id}
-                      bg={'#F1F4F6'}
-                      _before={{
-                        content: `""`,
-                        display: 'block',
-                        borderTopLeftRadius: '10px',
-                        borderTopRightRadius: '10px',
-                        background: '#F1F4F6'
-                      }}
-                    >
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </Th>
-                  );
-                })}
-              </Tr>
-            );
-          })}
-        </Thead>
-        <Tbody whiteSpace={'nowrap'}>
-          {table.getRowModel().rows.map((item) => {
-            return (
-              <Tr key={item.id} fontSize={'12px'}>
-                {item.getAllCells().map((cell) => {
-                  const pinState = cell.column.getIsPinned();
-                  return (
-                    <Td
-                      p="10px"
-                      key={cell.id}
-                      {...(!pinState
-                        ? {}
-                        : {
-                            [pinState]: 0,
-                            position: 'sticky',
-                            zIndex: 2,
-                            _after: {
-                              content: '""',
-                              position: 'absolute',
-                              top: 0,
-                              bottom: '-1px',
-                              width: '30px',
-                              ...(pinState === 'right'
-                                ? {
-                                    right: '100%',
-                                    boxShadow: 'rgba(5, 5, 5, 0.06) -10px 0px 8px -8px inset'
-                                  }
-                                : {
-                                    left: '100%',
-                                    boxShadow: 'rgba(5, 5, 5, 0.06) 10px 0px 8px -8px inset'
-                                  })
-                            },
-                            bgColor: 'white'
-                          })}
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </Td>
-                  );
-                })}
-              </Tr>
-            );
-          })}
-          {}
-        </Tbody>
-      </Table>
-    </TableContainer>
-  );
-};
-
-BaseTable.displayName = 'BaseTable';

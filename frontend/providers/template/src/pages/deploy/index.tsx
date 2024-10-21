@@ -6,47 +6,71 @@ import { useLoading } from '@/hooks/useLoading';
 import { useToast } from '@/hooks/useToast';
 import { useCachedStore } from '@/store/cached';
 import { useGlobalStore } from '@/store/global';
+import { useSearchStore } from '@/store/search';
 import type { QueryType, YamlItemType } from '@/types';
-import { TemplateSourceType } from '@/types/app';
+import { ApplicationType, TemplateSourceType } from '@/types/app';
 import { serviceSideProps } from '@/utils/i18n';
 import { generateYamlList, parseTemplateString } from '@/utils/json-yaml';
-import { deepSearch, useCopyData } from '@/utils/tools';
-import { Box, Flex, Icon, Text } from '@chakra-ui/react';
+import { compareFirstLanguages, deepSearch, useCopyData } from '@/utils/tools';
+import { Box, Flex, Icon, Text, Grid, GridItem } from '@chakra-ui/react';
 import { useQuery } from '@tanstack/react-query';
-import JSYAML from 'js-yaml';
-import { mapValues, reduce } from 'lodash';
 import debounce from 'lodash/debounce';
 import { useTranslation } from 'next-i18next';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import Form from './components/Form';
 import ReadMe from './components/ReadMe';
-import Yaml from './components/Yaml';
+import { getTemplateInputDefaultValues, getTemplateValues } from '@/utils/template';
+import QuotaBox from './components/QuotaBox';
+import PriceBox from './components/PriceBox';
+import { useUserStore } from '@/store/user';
+import { getResourceUsage } from '@/utils/usage';
+import Head from 'next/head';
+import { useMessage } from '@sealos/ui';
 
 const ErrorModal = dynamic(() => import('./components/ErrorModal'));
 const Header = dynamic(() => import('./components/Header'), { ssr: false });
 
-export default function EditApp({ appName }: { appName?: string }) {
+export default function EditApp({
+  appName,
+  metaData
+}: {
+  appName?: string;
+  metaData: {
+    title: string;
+    keywords: string;
+    description: string;
+  };
+}) {
   const { t, i18n } = useTranslation();
-  const { toast } = useToast();
+  const { message: toast } = useMessage();
   const router = useRouter();
   const { copyData } = useCopyData();
   const { templateName } = router.query as QueryType;
   const { Loading, setIsLoading } = useLoading();
-  const [forceUpdate, setForceUpdate] = useState(false);
   const { title, applyBtnText, applyMessage, applySuccess, applyError } = editModeMap(false);
   const [templateSource, setTemplateSource] = useState<TemplateSourceType>();
   const [yamlList, setYamlList] = useState<YamlItemType[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
   const { screenWidth } = useGlobalStore();
   const { setCached, cached, insideCloud, deleteCached, setInsideCloud } = useCachedStore();
+  const { setAppType } = useSearchStore();
+  const { userSourcePrice, checkQuotaAllow, loadUserQuota } = useUserStore();
+  useEffect(() => {
+    loadUserQuota();
+  }, []);
 
   const detailName = useMemo(
     () => templateSource?.source?.defaults?.app_name?.value || '',
     [templateSource]
   );
+
+  const usage = useMemo(() => {
+    const usage = getResourceUsage(yamlList?.map((item) => item.value) || []);
+    return usage;
+  }, [yamlList]);
 
   const { data: platformEnvs } = useQuery(['getPlatformEnvs'], getPlatformEnv, {
     staleTime: 5 * 60 * 1000
@@ -68,102 +92,137 @@ export default function EditApp({ appName }: { appName?: string }) {
     return val;
   }, [screenWidth]);
 
-  const getFormDefaultValues = (templateSource: TemplateSourceType | undefined) => {
-    const inputs = templateSource?.source?.inputs;
-    return reduce(
-      inputs,
-      (acc, item) => {
-        // @ts-ignore
-        acc[item.key] = item.default;
-        return acc;
-      },
-      {}
-    );
-  };
-
-  const formOnchangeDebounce = debounce((data: any) => {
-    try {
-      if (!templateSource) return;
+  const generateYamlData = useCallback(
+    (templateSource: TemplateSourceType, inputs: Record<string, string>): YamlItemType[] => {
+      if (!templateSource) return [];
       const app_name = templateSource?.source?.defaults?.app_name?.value;
-
-      const yamlString = templateSource.yamlList
-        ?.map((item) => {
-          // if (item?.kind === 'Instance') {
-          //   const _temp: TemplateInstanceType = cloneDeep(item);
-          //   _temp.spec.defaults = templateSource?.source?.defaults;
-          //   _temp.spec.inputs = isEmpty(data) ? null : data;
-          //   console.log(_temp, templateSource?.source?.defaults, data);
-          //   return JSYAML.dump(_temp);
-          // }
-          return JSYAML.dump(item);
-        })
-        .join('---\n');
-      const output = mapValues(templateSource?.source.defaults, (value) => value.value);
-      const generateStr = parseTemplateString(yamlString, /\$\{\{\s*(.*?)\s*\}\}/g, {
+      const { defaults, defaultInputs } = getTemplateValues(templateSource);
+      const data = {
+        ...platformEnvs,
         ...templateSource?.source,
-        inputs: data,
-        defaults: output
-      });
-      setYamlList(generateYamlList(generateStr, app_name));
-    } catch (error) {
-      console.log(error);
-    }
-  }, 200);
+        inputs: {
+          ...defaultInputs,
+          ...inputs
+        },
+        defaults: defaults
+      };
+      const generateStr = parseTemplateString(templateSource.appYaml, data);
+      return generateYamlList(generateStr, app_name);
+    },
+    [platformEnvs]
+  );
 
-  const getCachedValue = () => {
-    if (!cached) return null;
+  const formOnchangeDebounce = useCallback(
+    debounce((inputs: Record<string, string>) => {
+      try {
+        if (!templateSource) return;
+        const list = generateYamlData(templateSource, inputs);
+        setYamlList(list);
+      } catch (error) {
+        console.log(error);
+      }
+    }, 500),
+    [templateSource, generateYamlData]
+  );
+
+  const getCachedValue = ():
+    | {
+        cachedKey: string;
+        [key: string]: any;
+      }
+    | undefined => {
+    if (!cached) return undefined;
     const cachedValue = JSON.parse(cached);
-    return cachedValue?.cachedKey === templateName ? cachedValue : null;
+    return cachedValue?.cachedKey === templateName ? cachedValue : undefined;
   };
 
   // form
   const formHook = useForm({
-    defaultValues: getFormDefaultValues(templateSource),
+    defaultValues: getTemplateInputDefaultValues(templateSource),
     values: getCachedValue()
   });
 
   // watch form change, compute new yaml
-  formHook.watch((data: any) => {
-    data && formOnchangeDebounce(data);
-    setForceUpdate(!forceUpdate);
-  });
+  useEffect(() => {
+    const subscription = formHook.watch((data: Record<string, string>) => {
+      data && formOnchangeDebounce(data);
+    });
+    return () => subscription.unsubscribe();
+  }, [formHook, formOnchangeDebounce]);
 
   const submitSuccess = async () => {
+    const quoteCheckRes = checkQuotaAllow({
+      cpu: usage.cpu.max,
+      memory: usage.memory.max,
+      storage: usage.storage.max
+    });
+
+    if (quoteCheckRes) {
+      return toast({
+        status: 'warning',
+        title: t(quoteCheckRes),
+        duration: 5000,
+        isClosable: true
+      });
+    }
     setIsLoading(true);
+
     try {
       if (!insideCloud) {
-        setIsLoading(false);
-        setCached(JSON.stringify({ ...formHook.getValues(), cachedKey: templateName }));
-        const _name = encodeURIComponent(`?templateName=${templateName}&sealos_inside=true`);
-        const _domain = platformEnvs?.SEALOS_CLOUD_DOMAIN;
-        const href = `https://${_domain}/?openapp=system-fastdeploy${_name}`;
-        return window.open(href, '_self');
+        handleOutside();
+      } else {
+        await handleInside();
       }
-      const yamls = yamlList.map((item) => item.value);
-
-      const result = await postDeployApp(yamls, 'create');
-
-      toast({
-        title: t(applySuccess),
-        status: 'success'
-      });
-
-      deleteCached();
-
-      router.push({
-        pathname: '/instance',
-        query: {
-          instanceName: detailName
-        }
-      });
     } catch (error) {
       setErrorMessage(JSON.stringify(error));
     }
     setIsLoading(false);
   };
 
-  const submitError = () => {
-    formHook.getValues();
+  const handleOutside = () => {
+    setCached(JSON.stringify({ ...formHook.getValues(), cachedKey: templateName }));
+
+    const params = new URLSearchParams();
+    ['k', 's', 'bd_vid'].forEach((param) => {
+      const value = router.query[param];
+      if (typeof value === 'string') {
+        params.append(param, value);
+      }
+    });
+
+    const queryString = params.toString();
+
+    const baseUrl = `https://${platformEnvs?.DESKTOP_DOMAIN}/`;
+    const encodedTemplateQuery = encodeURIComponent(
+      `?templateName=${templateName}&sealos_inside=true`
+    );
+    const templateQuery = `openapp=system-template${encodedTemplateQuery}`;
+    const href = `${baseUrl}${
+      queryString ? `?${queryString}&${templateQuery}` : `?${templateQuery}`
+    }`;
+
+    window.open(href, '_self');
+  };
+
+  const handleInside = async () => {
+    const yamls = yamlList.map((item) => item.value);
+    await postDeployApp(yamls, 'create');
+
+    toast({
+      title: t(applySuccess),
+      status: 'success'
+    });
+
+    deleteCached();
+    setAppType(ApplicationType.MyApp);
+    router.push({
+      pathname: '/instance',
+      query: { instanceName: detailName }
+    });
+  };
+
+  const submitError = async () => {
+    await formHook.trigger();
     toast({
       title: deepSearch(formHook.formState.errors),
       status: 'error',
@@ -173,32 +232,12 @@ export default function EditApp({ appName }: { appName?: string }) {
     });
   };
 
-  const handleTemplateSource = (res: TemplateSourceType) => {
+  const parseTemplate = (res: TemplateSourceType) => {
     try {
       setTemplateSource(res);
-      const app_name = res?.source?.defaults?.app_name?.value;
-      const _defaults = mapValues(res?.source.defaults, (value) => value.value);
-      const _inputs = getCachedValue() ? JSON.parse(cached) : getFormDefaultValues(res);
-      const yamlString = res.yamlList
-        ?.map((item) => {
-          // if (item?.kind === 'Instance') {
-          //   const _temp: TemplateInstanceType = cloneDeep(item);
-          //   _temp.spec.defaults = res.source.defaults;
-          //   _temp.spec.inputs = isEmpty(_inputs) ? null : _inputs;
-          //   console.log(_temp, res?.source.defaults, _inputs);
-          //   return JSYAML.dump(_temp);
-          // }
-          return JSYAML.dump(item);
-        })
-        .join('---\n');
-
-      const generateStr = parseTemplateString(yamlString, /\$\{\{\s*(.*?)\s*\}\}/g, {
-        ...res?.source,
-        defaults: _defaults,
-        inputs: _inputs
-      });
-      // console.log(generateStr, '------');
-      setYamlList(generateYamlList(generateStr, app_name));
+      const inputs = getCachedValue() ? JSON.parse(cached) : getTemplateInputDefaultValues(res);
+      const list = generateYamlData(res, inputs);
+      setYamlList(list);
     } catch (err) {
       console.log(err, 'getTemplateData');
       toast({
@@ -216,7 +255,7 @@ export default function EditApp({ appName }: { appName?: string }) {
     () => getTemplateSource(templateName),
     {
       onSuccess(data) {
-        handleTemplateSource(data);
+        parseTemplate(data);
       },
       onError(err) {
         toast({
@@ -231,7 +270,7 @@ export default function EditApp({ appName }: { appName?: string }) {
   );
 
   const copyTemplateLink = () => {
-    const str = `https://${platformEnvs?.SEALOS_CLOUD_DOMAIN}/?openapp=system-fastdeploy%3FtemplateName%3D${appName}`;
+    const str = `https://${platformEnvs?.DESKTOP_DOMAIN}/?openapp=system-template%3FtemplateName%3D${appName}`;
     copyData(str);
   };
 
@@ -258,6 +297,15 @@ export default function EditApp({ appName }: { appName?: string }) {
       borderRadius={'12px'}
       background={'linear-gradient(180deg, #FFF 0%, rgba(255, 255, 255, 0.70) 100%)'}
     >
+      <Head>
+        <title>{`${metaData.title}${
+          i18n.language === 'en'
+            ? 'Deployment and installation tutorial - Sealos'
+            : '部署和安装教程 - Sealos'
+        }`}</title>
+        <meta name="keywords" content={metaData.keywords} />
+        <meta name="description" content={metaData.description} />
+      </Head>
       <Flex
         zIndex={99}
         position={'sticky'}
@@ -301,7 +349,7 @@ export default function EditApp({ appName }: { appName?: string }) {
               <path d="M9.1875 13.1875L3.92187 7.9375C3.85937 7.875 3.81521 7.80729 3.78937 7.73438C3.76312 7.66146 3.75 7.58333 3.75 7.5C3.75 7.41667 3.76312 7.33854 3.78937 7.26562C3.81521 7.19271 3.85937 7.125 3.92187 7.0625L9.1875 1.79687C9.33333 1.65104 9.51562 1.57812 9.73438 1.57812C9.95312 1.57812 10.1406 1.65625 10.2969 1.8125C10.4531 1.96875 10.5312 2.15104 10.5312 2.35938C10.5312 2.56771 10.4531 2.75 10.2969 2.90625L5.70312 7.5L10.2969 12.0938C10.4427 12.2396 10.5156 12.4192 10.5156 12.6325C10.5156 12.8463 10.4375 13.0312 10.2812 13.1875C10.125 13.3438 9.94271 13.4219 9.73438 13.4219C9.52604 13.4219 9.34375 13.3438 9.1875 13.1875Z" />
             </Icon>
             <Text ml="4px" onClick={() => router.push('/')}>
-              {t('Template List')}
+              {t('Application List')}
             </Text>
           </Flex>
           <Text px="6px">/</Text>
@@ -323,7 +371,7 @@ export default function EditApp({ appName }: { appName?: string }) {
           backgroundColor={'rgba(255, 255, 255, 0.90)'}
         >
           <Header
-            cloudDomain={platformEnvs?.SEALOS_CLOUD_DOMAIN || ''}
+            cloudDomain={platformEnvs?.DESKTOP_DOMAIN || ''}
             templateDetail={data?.templateYaml!}
             appName={appName || ''}
             title={title}
@@ -332,7 +380,13 @@ export default function EditApp({ appName }: { appName?: string }) {
             applyCb={() => formHook.handleSubmit(openConfirm(submitSuccess), submitError)()}
           />
           <Flex w="100%" mt="32px" flexDirection="column">
-            <Form formHook={formHook} pxVal={pxVal} formSource={templateSource?.source} />
+            {/* <QuotaBox /> */}
+            <Form
+              formHook={formHook}
+              pxVal={pxVal}
+              formSource={templateSource!}
+              platformEnvs={platformEnvs!}
+            />
             {/* <Yaml yamlList={yamlList} pxVal={pxVal}></Yaml> */}
             <ReadMe templateDetail={data?.templateYaml!} />
           </Flex>
@@ -349,11 +403,40 @@ export default function EditApp({ appName }: { appName?: string }) {
 }
 
 export async function getServerSideProps(content: any) {
+  const local =
+    content?.req?.cookies?.NEXT_LOCALE ||
+    compareFirstLanguages(content?.req?.headers?.['accept-language'] || 'zh');
+
+  content?.res.setHeader(
+    'Set-Cookie',
+    `NEXT_LOCALE=${local}; Max-Age=2592000; Secure; SameSite=None`
+  );
+
   const appName = content?.query?.templateName || '';
+
+  const baseurl = `http://${process.env.HOSTNAME || 'localhost'}:${process.env.PORT || 3000}`;
+
+  let metaData = {
+    title: `${appName}部署和安装教程 - Sealos`,
+    keywords: '',
+    description: ''
+  };
+
+  try {
+    const templateSource: { data: TemplateSourceType } = await (
+      await fetch(`${baseurl}/api/getTemplateSource?templateName=${appName}`)
+    ).json();
+    metaData = {
+      title: templateSource?.data.templateYaml.spec.title,
+      keywords: templateSource?.data.templateYaml.spec.description,
+      description: templateSource?.data.templateYaml.spec.description
+    };
+  } catch (error) {}
 
   return {
     props: {
       appName,
+      metaData,
       ...(await serviceSideProps(content))
     }
   };

@@ -1,11 +1,6 @@
-export type BaseResourceType = {
-  id: string;
-  name: string;
-  kind: ResourceKindType;
-  apiVersion?: string;
-};
+import { V1ServicePort } from '@kubernetes/client-node';
 
-export type ResourceKindType =
+export type AllResourceKindType =
   | 'DataBase'
   | 'AppLaunchpad'
   | 'CronJob'
@@ -17,13 +12,20 @@ export type ResourceKindType =
   | 'RoleBinding'
   | 'ServiceAccount'
   | 'ConfigMap'
-  | 'Instance';
+  | 'Instance'
+  | 'Service'
+  | 'ObjectStorageBucket'
+  | 'PersistentVolumeClaim';
 
-export type OtherResourceListItemType = {
+export type DeleteResourceFunction = (instanceName: string) => void;
+
+export type ResourceListItemType = {
   id: string;
   name: string;
-  createTime: string;
-  kind: ResourceKindType;
-  label: string;
+  kind: AllResourceKindType;
   apiVersion?: string;
+  createTime?: string;
+  label?: string;
+  servicePorts?: V1ServicePort[];
+  serviceType?: string;
 };

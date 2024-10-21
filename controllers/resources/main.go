@@ -19,21 +19,23 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"time"
 
-	"github.com/labring/sealos/controllers/pkg/database/mongo"
-
-	"github.com/labring/sealos/controllers/pkg/database"
-
-	"github.com/labring/sealos/controllers/pkg/resources"
-
-	"github.com/labring/sealos/controllers/resources/controllers"
-
 	objectstoragev1 "github/labring/sealos/controllers/objectstorage/api/v1"
 
-	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
-	// to ensure that exec-entrypoint and run can make use of them.
+	"github.com/labring/sealos/controllers/pkg/database"
+	"github.com/labring/sealos/controllers/pkg/database/mongo"
+	"github.com/labring/sealos/controllers/pkg/objectstorage"
+	"github.com/labring/sealos/controllers/pkg/resources"
+	"github.com/labring/sealos/controllers/pkg/utils/env"
+
+	"github.com/apecloud/kubeblocks/apis/dataprotection/v1alpha1"
+
+	appv1 "github.com/labring/sealos/controllers/app/api/v1"
+	"github.com/labring/sealos/controllers/resources/controllers"
+
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,6 +44,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -52,6 +55,8 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(appv1.AddToScheme(scheme))
+	utilruntime.Must(v1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -73,9 +78,10 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
+		Scheme: scheme,
+		Metrics: metricsserver.Options{
+			BindAddress: metricsAddr,
+		},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "a63686c3.sealos.io",
@@ -97,10 +103,13 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	//if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-	//	setupLog.Error(err, "problem running manager")
-	//	os.Exit(1)
-	//}
+
+	err = controllers.InitIndexField(mgr)
+	if err != nil {
+		setupLog.Error(err, "failed to init index field")
+		os.Exit(1)
+	}
+
 	go func() {
 		if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 			setupLog.Error(err, "problem running manager")
@@ -123,6 +132,21 @@ func main() {
 			setupLog.Error(err, "failed to disconnect db client")
 		}
 	}()
+	if trafficURI := os.Getenv(database.TrafficMongoURI); trafficURI != "" {
+		reconciler.TrafficClient, err = mongo.NewMongoInterface(context.Background(), trafficURI)
+		if err != nil {
+			setupLog.Error(err, "failed to init traffic db client")
+			os.Exit(1)
+		}
+		defer func() {
+			if err := reconciler.TrafficClient.Disconnect(context.Background()); err != nil {
+				setupLog.Error(err, "failed to disconnect traffic db client")
+			}
+		}()
+	} else {
+		setupLog.Info("traffic mongo uri not found, please check env: TRAFFIC_MONGO_URI")
+	}
+
 	err = reconciler.DBClient.InitDefaultPropertyTypeLS()
 	if err != nil {
 		setupLog.Error(err, "failed to get property type")
@@ -130,12 +154,14 @@ func main() {
 	}
 	reconciler.Properties = resources.DefaultPropertyTypeLS
 	const (
-		MinioEndpoint = "MINIO_ENDPOINT"
-		MinioAk       = "MINIO_AK"
-		MinioSk       = "MINIO_SK"
-		PromURL       = "PROM_URL"
+		MinioEndpoint          = "MINIO_ENDPOINT"
+		MinioAk                = "MINIO_AK"
+		MinioSk                = "MINIO_SK"
+		PromURL                = "PROM_URL"
+		MinioMetricsAddr       = "MINIO_METRICS_ADDR"
+		MinioMetricsAddrSecure = "MINIO_METRICS_SECURE"
 	)
-	if endpoint, ak, sk := os.Getenv(MinioEndpoint), os.Getenv(MinioAk), os.Getenv(MinioSk); endpoint != "" && ak != "" && sk != "" {
+	if endpoint, ak, sk, mAddr := os.Getenv(MinioEndpoint), os.Getenv(MinioAk), os.Getenv(MinioSk), os.Getenv(MinioMetricsAddr); endpoint != "" && ak != "" && sk != "" && mAddr != "" {
 		reconciler.Logger.Info("init minio client")
 		if reconciler.ObjStorageClient, err = objectstoragev1.NewOSClient(endpoint, ak, sk); err != nil {
 			reconciler.Logger.Error(err, "failed to new minio client")
@@ -146,13 +172,22 @@ func main() {
 			reconciler.Logger.Error(err, "failed to list minio buckets")
 			os.Exit(1)
 		}
-		if promURL := os.Getenv(PromURL); promURL == "" {
+		if reconciler.PromURL = os.Getenv(PromURL); reconciler.PromURL == "" {
 			reconciler.Logger.Info("prometheus url not found, please check env: PROM_URL")
-		} else {
-			reconciler.PromURL = promURL
 		}
+		secure := env.GetBoolWithDefault(MinioMetricsAddrSecure, false)
+		reconciler.ObjStorageMetricsClient, err = objectstorage.NewMetricsClient(mAddr, ak, sk, secure)
+		if err != nil {
+			reconciler.Logger.Error(err, "failed to new minio metrics client")
+			os.Exit(1)
+		}
+		reconciler.Logger.Info(fmt.Sprintf("init minio client with info (endpoint %s, metrics addr %s, metrics addr secure %v) success", endpoint, mAddr, secure))
 	} else {
-		reconciler.Logger.Info("minio info not found, please check env: MINIO_ENDPOINT, MINIO_AK, MINIO_SK")
+		reconciler.Logger.Info("minio info not found, please check env: MINIO_ENDPOINT, MINIO_AK, MINIO_SK, MINIO_METRICS_ADDR")
+	}
+	err = reconciler.DBClient.CreateTTLTrafficTimeSeries()
+	if err != nil {
+		reconciler.Logger.Error(err, "failed to create ttl traffic time series")
 	}
 	// timer creates tomorrow's timing table in advance to ensure that tomorrow's table exists
 	// Execute immediately and then every 24 hours.

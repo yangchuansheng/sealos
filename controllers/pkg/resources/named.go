@@ -17,57 +17,55 @@ package resources
 import (
 	"strings"
 
-	corev1 "k8s.io/api/core/v1"
+	"github.com/labring/sealos/controllers/pkg/utils/label"
 
-	sealos_networkmanager "github.com/dinoallo/sealos-networkmanager-protoapi"
+	corev1 "k8s.io/api/core/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-/*
-AppType (sort by label) :
-	Database： app.kubernetes.io/instance=gitea  app.kubernetes.io/managed-by=kubeblocks apps.kubeblocks.io/component-name
-	AppLaunchpad：app: xxx
-	Terminal： TerminalID: xxx
-	Cronjob：job-name: xxx
-	Other: in addition to the above all labels
-*/
-
 const (
-	Pod = "Pod"
-	PVC = "PVC"
-)
-
-const (
-	DBPodLabelInstanceKey      = "app.kubernetes.io/instance"
-	DBPodLabelManagedByKey     = "app.kubernetes.io/managed-by"
-	DBPodLabelManagedByValue   = "kubeblocks"
-	DBPodLabelComponentNameKey = "apps.kubeblocks.io/component-name"
-	TerminalIDLabelKey         = "TerminalID"
-	AppLabelKey                = "app"
-	AppDeployLabelKey          = "cloud.sealos.io/app-deploy-manager"
-	JobNameLabelKey            = "job-name"
-	ACMEChallengeKey           = "acme.cert-manager.io/http01-solver"
-	KubeBlocksBackUpName       = "kubeblocks-backup-data"
+	DBPodLabelInstanceKey       = "app.kubernetes.io/instance"
+	DBPodLabelComponentNameKey  = "apps.kubeblocks.io/component-name"
+	TerminalIDLabelKey          = "TerminalID"
+	AppLabelKey                 = "app"
+	AppDeployLabelKey           = "cloud.sealos.io/app-deploy-manager"
+	AppStoreDeployLabelKey      = "cloud.sealos.io/deploy-on-sealos"
+	JobNameLabelKey             = "job-name"
+	ACMEChallengeKey            = "acme.cert-manager.io/http01-solver"
+	KubeBlocksBackUpName        = "kubeblocks-backup-data"
+	dataProtectionBackupRepoKey = "dataprotection.kubeblocks.io/backup-repo-name"
+	InstanceLabelKey            = "app.kubernetes.io/instance"
 )
 
 type ResourceNamed struct {
 	_name string
 	// db or app or terminal or job or other
-	_type  string
-	labels map[string]string
+	_type      string
+	parentType string
+	parentName string
+	labels     map[string]string
 }
 
 func NewResourceNamed(cr client.Object) *ResourceNamed {
 	labels := cr.GetLabels()
 	p := &ResourceNamed{labels: labels}
 	switch {
+	case cr.GetName() == KubeBlocksBackUpName || labels[dataProtectionBackupRepoKey] != "":
+		p._type = DBBackup
+		p._name = KubeBlocksBackUpName
+		if labels[InstanceLabelKey] != "" {
+			p._name = labels[InstanceLabelKey]
+		}
 	case labels[DBPodLabelComponentNameKey] != "":
 		p._type = DB
 		p._name = labels[DBPodLabelInstanceKey]
-	case labels[TerminalIDLabelKey] != "":
+	case labels[TerminalIDLabelKey] != "" || (labels[label.AppManagedBy] == label.DefaultManagedBy && labels[label.AppPartOf] == "terminal"):
 		p._type = TERMINAL
 		p._name = ""
+	case labels[label.AppPartOf] == "devbox":
+		p._type = DevBox
+		p._name = labels[label.AppName]
 	case labels[AppLabelKey] != "":
 		p._type = APP
 		p._name = labels[AppLabelKey]
@@ -77,9 +75,6 @@ func NewResourceNamed(cr client.Object) *ResourceNamed {
 	case labels[JobNameLabelKey] != "":
 		p._type = JOB
 		p._name = strings.SplitN(labels[JobNameLabelKey], "-", 2)[0]
-	case cr.GetName() == KubeBlocksBackUpName:
-		p._type = JOB
-		p._name = KubeBlocksBackUpName
 	case labels[ACMEChallengeKey] != "":
 		p._type = APP
 		p._name = getACMEResolverName(cr)
@@ -88,6 +83,15 @@ func NewResourceNamed(cr client.Object) *ResourceNamed {
 		p._name = ""
 	}
 	return p
+}
+
+func (r *ResourceNamed) SetInstanceParent(instances map[string]struct{}) {
+	for ins := range instances {
+		if strings.HasPrefix(r._name, ins) {
+			r.parentType = AppStore
+			r.parentName = ins
+		}
+	}
 }
 
 func NewObjStorageResourceNamed(bucket string) *ResourceNamed {
@@ -120,105 +124,26 @@ func getACMEResolverName(obj client.Object) string {
 	return pod.Name
 }
 
-func (p *ResourceNamed) Type() uint8 {
-	return AppType[p._type]
+func (r *ResourceNamed) Type() uint8 {
+	return AppType[r._type]
 }
 
-func (p *ResourceNamed) Labels() map[string]string {
-	label := make(map[string]string)
-	switch p.Type() {
-	case db:
-		label[DBPodLabelComponentNameKey] = p.labels[DBPodLabelComponentNameKey]
-		label[DBPodLabelInstanceKey] = p.labels[DBPodLabelInstanceKey]
-	case terminal:
-		label[TerminalIDLabelKey] = p.labels[TerminalIDLabelKey]
-	case app:
-		label[AppLabelKey] = p.labels[AppLabelKey]
-	case job:
-		label[JobNameLabelKey] = p.labels[JobNameLabelKey]
-		//case other:
-		//default:
-	}
-	return label
+func (r *ResourceNamed) ParentType() uint8 {
+	return AppType[r.parentType]
 }
 
-var notExistLabels = func() map[uint8][]*sealos_networkmanager.Label {
-	labels := make(map[uint8][]*sealos_networkmanager.Label)
-	for k := range AppTypeReverse {
-		labels[k] = getNotExistLabels(k)
-	}
-	return labels
-}()
-
-func (p *ResourceNamed) GetNotExistLabels() []*sealos_networkmanager.Label {
-	return notExistLabels[p.Type()]
+func (r *ResourceNamed) ParentName() string {
+	return r.parentName
 }
 
-func getNotExistLabels(tp uint8) []*sealos_networkmanager.Label {
-	var labels []*sealos_networkmanager.Label
-	for appType := range AppTypeReverse {
-		if tp == appType {
-			continue
-		}
-		switch appType {
-		case db:
-			labels = append(labels, &sealos_networkmanager.Label{
-				Key: DBPodLabelComponentNameKey,
-			}, &sealos_networkmanager.Label{
-				Key: DBPodLabelManagedByKey,
-			})
-		case app:
-			labels = append(labels, &sealos_networkmanager.Label{
-				Key: AppLabelKey,
-			})
-		case terminal:
-			labels = append(labels, &sealos_networkmanager.Label{
-				Key: TerminalIDLabelKey,
-			})
-		case job:
-			labels = append(labels, &sealos_networkmanager.Label{
-				Key: JobNameLabelKey,
-			})
-		}
-	}
-	return labels
+func (r *ResourceNamed) TypeString() string {
+	return r._type
 }
 
-func (p *ResourceNamed) GetInLabels() []*sealos_networkmanager.Label {
-	var labelsEqual []*sealos_networkmanager.Label
-	switch p.Type() {
-	case db:
-		labelsEqual = append(labelsEqual, &sealos_networkmanager.Label{
-			Key:   DBPodLabelComponentNameKey,
-			Value: []string{p.labels[DBPodLabelComponentNameKey]},
-		})
-	case terminal:
-		labelsEqual = append(labelsEqual, &sealos_networkmanager.Label{
-			Key:   TerminalIDLabelKey,
-			Value: []string{p.labels[TerminalIDLabelKey]},
-		})
-	case app:
-		labelsEqual = append(labelsEqual, &sealos_networkmanager.Label{
-			Key:   AppLabelKey,
-			Value: []string{p.labels[AppLabelKey]},
-		})
-	case job:
-		labelsEqual = append(labelsEqual, &sealos_networkmanager.Label{
-			Key:   JobNameLabelKey,
-			Value: []string{p.labels[JobNameLabelKey]},
-		})
-	}
-	return labelsEqual
+func (r *ResourceNamed) Name() string {
+	return r._name
 }
 
-func (p *ResourceNamed) TypeString() string {
-	return p._type
-}
-
-func (p *ResourceNamed) Name() string {
-	return p._name
-}
-
-func (p *ResourceNamed) String() string {
-	return p._type + "/" + p._name
+func (r *ResourceNamed) String() string {
+	return r._type + "/" + r._name
 }

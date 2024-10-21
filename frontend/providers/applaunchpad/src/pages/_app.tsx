@@ -2,7 +2,7 @@ import { theme } from '@/constants/theme';
 import { useConfirm } from '@/hooks/useConfirm';
 import { useLoading } from '@/hooks/useLoading';
 import { useGlobalStore } from '@/store/global';
-import { loadInitData } from '@/store/static';
+import { DESKTOP_DOMAIN, loadInitData } from '@/store/static';
 import { useUserStore } from '@/store/user';
 import { getLangStore, setLangStore } from '@/utils/cookieUtils';
 import { ChakraProvider } from '@chakra-ui/react';
@@ -16,10 +16,10 @@ import NProgress from 'nprogress'; //nprogress module
 import { useEffect, useState } from 'react';
 import { EVENT_NAME } from 'sealos-desktop-sdk';
 import { createSealosApp, sealosApp } from 'sealos-desktop-sdk/app';
-
-import { getPlatformEnv } from '@/api/platform';
 import '@/styles/reset.scss';
 import 'nprogress/nprogress.css';
+import '@sealos/driver/src/driver.css';
+import { AppEditSyncedFields } from '@/types/app';
 
 //Binding events.
 Router.events.on('routeChangeStart', () => NProgress.start());
@@ -50,10 +50,9 @@ const App = ({ Component, pageProps }: AppProps) => {
   });
 
   useEffect(() => {
-    NProgress.start();
     const response = createSealosApp();
     (async () => {
-      const { SEALOS_DOMAIN, FORM_SLIDER_LIST_CONFIG } = await (() => loadInitData())();
+      const { FORM_SLIDER_LIST_CONFIG, DESKTOP_DOMAIN } = await (() => loadInitData())();
       initFormSliderList(FORM_SLIDER_LIST_CONFIG);
       loadUserSourcePrice();
 
@@ -69,14 +68,12 @@ const App = ({ Component, pageProps }: AppProps) => {
         console.log('App is not running in desktop');
         if (!process.env.NEXT_PUBLIC_MOCK_USER) {
           localStorage.removeItem('session');
-
           openConfirm(() => {
-            window.open(`https://${SEALOS_DOMAIN}`, '_self');
+            window.open(`https://${DESKTOP_DOMAIN}`, '_self');
           })();
         }
       }
     })();
-    NProgress.done();
     return response;
   }, []);
 
@@ -133,35 +130,48 @@ const App = ({ Component, pageProps }: AppProps) => {
     i18n?.changeLanguage?.(lang);
   }, [refresh, router.pathname]);
 
-  // InternalAppCall
-  const setupInternalAppCallListener = async () => {
-    try {
-      const envs = await getPlatformEnv();
-      const event = async (e: MessageEvent) => {
-        const whitelist = [`https://${envs?.domain}`];
-        if (!whitelist.includes(e.origin)) {
-          return;
-        }
-        try {
-          if (e.data?.type === 'InternalAppCall' && e.data?.name) {
-            router.push({
-              pathname: '/app/detail',
-              query: {
-                name: e.data.name
-              }
-            });
-          }
-        } catch (error) {
-          console.log(error, 'error');
-        }
-      };
-      window.addEventListener('message', event);
-      return () => window.removeEventListener('message', event);
-    } catch (error) {}
-  };
   useEffect(() => {
+    const setupInternalAppCallListener = async () => {
+      try {
+        const event = async (
+          e: MessageEvent<{
+            type?: string;
+            name?: string;
+            formData?: string;
+          }>
+        ) => {
+          const whitelist = [`https://${DESKTOP_DOMAIN}`];
+          if (!whitelist.includes(e.origin)) {
+            return;
+          }
+          try {
+            if (e.data?.type === 'InternalAppCall') {
+              const { name, formData } = e.data;
+              if (name) {
+                router.push({
+                  pathname: '/app/detail',
+                  query: {
+                    name: name
+                  }
+                });
+              } else if (formData) {
+                router.push({
+                  pathname: '/app/edit',
+                  query: {
+                    formData: formData
+                  }
+                });
+              }
+            }
+          } catch (error) {
+            console.log(error, 'error');
+          }
+        };
+        window.addEventListener('message', event);
+        return () => window.removeEventListener('message', event);
+      } catch (error) {}
+    };
     setupInternalAppCallListener();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -174,6 +184,19 @@ const App = ({ Component, pageProps }: AppProps) => {
       </Head>
       <QueryClientProvider client={queryClient}>
         <ChakraProvider theme={theme}>
+          {/* <button
+            onClick={() => {
+              const lastLang = getLangStore();
+              let lang = lastLang === 'en' ? 'zh' : 'en';
+              if (lastLang !== lang) {
+                i18n.changeLanguage(lang);
+                setLangStore(lang);
+                setRefresh((state) => !state);
+              }
+            }}
+          >
+            changeLanguage
+          </button> */}
           <Component {...pageProps} />
           <ConfirmChild />
           <Loading loading={loading} />

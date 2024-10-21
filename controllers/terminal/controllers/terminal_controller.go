@@ -18,7 +18,6 @@ package controllers
 
 import (
 	"context"
-	"os"
 	"time"
 
 	"github.com/jaevor/go-nanoid"
@@ -29,17 +28,19 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/labring/sealos/controllers/pkg/utils/label"
 	terminalv1 "github.com/labring/sealos/controllers/terminal/api/v1"
 )
+
+const TerminalPartOf = "terminal"
 
 const (
 	Protocol            = "https://"
@@ -67,13 +68,10 @@ const (
 // TerminalReconciler reconciles a Terminal object
 type TerminalReconciler struct {
 	client.Client
-	Scheme          *runtime.Scheme
-	recorder        record.EventRecorder
-	Config          *rest.Config
-	terminalDomain  string
-	terminalPort    string
-	secretName      string
-	secretNamespace string
+	Scheme    *runtime.Scheme
+	recorder  record.EventRecorder
+	Config    *rest.Config
+	CtrConfig *Config
 }
 
 //+kubebuilder:rbac:groups=terminal.sealos.io,resources=terminals,verbs=get;list;watch;create;update;patch;delete
@@ -83,18 +81,7 @@ type TerminalReconciler struct {
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=events,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the Terminal object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.12.1/pkg/reconcile
 func (r *TerminalReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx, "terminal", req.NamespacedName)
 	terminal := &terminalv1.Terminal{}
@@ -129,20 +116,36 @@ func (r *TerminalReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
+	if terminal.Status.ServiceName == "" {
+		terminal.Status.ServiceName = terminal.Name + "-svc" + rand.String(5)
+		if err := r.Status().Update(ctx, terminal); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	recLabels := label.RecommendedLabels(&label.Recommended{
+		Name:      terminal.Name,
+		ManagedBy: label.DefaultManagedBy,
+		PartOf:    TerminalPartOf,
+	})
+
+	//Note: Fixme: For `Forward Compatibility` usage only, old resource controller need this label.
+	recLabels["TerminalID"] = terminal.Name
+
 	var hostname string
-	if err := r.syncDeployment(ctx, terminal, &hostname); err != nil {
+	if err := r.syncDeployment(ctx, terminal, &hostname, recLabels); err != nil {
 		logger.Error(err, "create deployment failed")
 		r.recorder.Eventf(terminal, corev1.EventTypeWarning, "Create deployment failed", "%v", err)
 		return ctrl.Result{}, err
 	}
 
-	if err := r.syncService(ctx, terminal); err != nil {
+	if err := r.syncService(ctx, terminal, recLabels); err != nil {
 		logger.Error(err, "create service failed")
 		r.recorder.Eventf(terminal, corev1.EventTypeWarning, "Create service failed", "%v", err)
 		return ctrl.Result{}, err
 	}
 
-	if err := r.syncIngress(ctx, terminal, hostname); err != nil {
+	if err := r.syncIngress(ctx, terminal, hostname, recLabels); err != nil {
 		logger.Error(err, "create ingress failed")
 		r.recorder.Eventf(terminal, corev1.EventTypeWarning, "Create ingress failed", "%v", err)
 		return ctrl.Result{}, err
@@ -153,26 +156,26 @@ func (r *TerminalReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{RequeueAfter: duration}, nil
 }
 
-func (r *TerminalReconciler) syncIngress(ctx context.Context, terminal *terminalv1.Terminal, hostname string) error {
+func (r *TerminalReconciler) syncIngress(ctx context.Context, terminal *terminalv1.Terminal, hostname string, recLabels map[string]string) error {
 	var err error
-	host := hostname + "." + r.terminalDomain
+	host := hostname + "." + r.CtrConfig.Global.CloudDomain
 	switch terminal.Spec.IngressType {
 	case terminalv1.Nginx:
-		err = r.syncNginxIngress(ctx, terminal, host)
+		err = r.syncNginxIngress(ctx, terminal, host, recLabels)
 	}
 	return err
 }
 
-func (r *TerminalReconciler) syncNginxIngress(ctx context.Context, terminal *terminalv1.Terminal, host string) error {
+func (r *TerminalReconciler) syncNginxIngress(ctx context.Context, terminal *terminalv1.Terminal, host string, recLabels map[string]string) error {
 	ingress := &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      terminal.Name,
 			Namespace: terminal.Namespace,
+			Labels:    recLabels,
 		},
 	}
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, ingress, func() error {
 		expectIngress := r.createNginxIngress(terminal, host)
-		ingress.ObjectMeta.Labels = expectIngress.ObjectMeta.Labels
 		ingress.ObjectMeta.Annotations = expectIngress.ObjectMeta.Annotations
 		ingress.Spec.Rules = expectIngress.Spec.Rules
 		ingress.Spec.TLS = expectIngress.Spec.TLS
@@ -190,40 +193,34 @@ func (r *TerminalReconciler) syncNginxIngress(ctx context.Context, terminal *ter
 	return nil
 }
 
-func (r *TerminalReconciler) syncService(ctx context.Context, terminal *terminalv1.Terminal) error {
-	labelsMap := buildLabelsMap(terminal)
-	expectService := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      terminal.Name,
-			Namespace: terminal.Namespace,
-		},
-		Spec: corev1.ServiceSpec{
-			Selector: labelsMap,
-			Type:     corev1.ServiceTypeClusterIP,
-			Ports: []corev1.ServicePort{
-				{Name: "tty", Port: 8080, TargetPort: intstr.FromInt(8080), Protocol: corev1.ProtocolTCP},
-			},
+func (r *TerminalReconciler) syncService(ctx context.Context, terminal *terminalv1.Terminal, recLabels map[string]string) error {
+	expectServiceSpec := corev1.ServiceSpec{
+		Selector: recLabels,
+		Type:     corev1.ServiceTypeClusterIP,
+		Ports: []corev1.ServicePort{
+			{Name: "tty", Port: 8080, TargetPort: intstr.FromInt(8080), Protocol: corev1.ProtocolTCP},
 		},
 	}
 
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      terminal.Name,
+			Name:      terminal.Status.ServiceName,
 			Namespace: terminal.Namespace,
+			Labels:    recLabels,
 		},
 	}
 
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, service, func() error {
 		// only update some specific fields
-		service.Spec.Selector = expectService.Spec.Selector
-		service.Spec.Type = expectService.Spec.Type
+		service.Spec.Selector = expectServiceSpec.Selector
+		service.Spec.Type = expectServiceSpec.Type
 		if len(service.Spec.Ports) == 0 {
-			service.Spec.Ports = expectService.Spec.Ports
+			service.Spec.Ports = expectServiceSpec.Ports
 		} else {
-			service.Spec.Ports[0].Name = expectService.Spec.Ports[0].Name
-			service.Spec.Ports[0].Port = expectService.Spec.Ports[0].Port
-			service.Spec.Ports[0].TargetPort = expectService.Spec.Ports[0].TargetPort
-			service.Spec.Ports[0].Protocol = expectService.Spec.Ports[0].Protocol
+			service.Spec.Ports[0].Name = expectServiceSpec.Ports[0].Name
+			service.Spec.Ports[0].Port = expectServiceSpec.Ports[0].Port
+			service.Spec.Ports[0].TargetPort = expectServiceSpec.Ports[0].TargetPort
+			service.Spec.Ports[0].Protocol = expectServiceSpec.Ports[0].Protocol
 		}
 		return controllerutil.SetControllerReference(terminal, service, r.Scheme)
 	}); err != nil {
@@ -232,8 +229,7 @@ func (r *TerminalReconciler) syncService(ctx context.Context, terminal *terminal
 	return nil
 }
 
-func (r *TerminalReconciler) syncDeployment(ctx context.Context, terminal *terminalv1.Terminal, hostname *string) error {
-	labelsMap := buildLabelsMap(terminal)
+func (r *TerminalReconciler) syncDeployment(ctx context.Context, terminal *terminalv1.Terminal, hostname *string, recLabels map[string]string) error {
 	var (
 		objectMeta      metav1.ObjectMeta
 		selector        *metav1.LabelSelector
@@ -246,12 +242,13 @@ func (r *TerminalReconciler) syncDeployment(ctx context.Context, terminal *termi
 	objectMeta = metav1.ObjectMeta{
 		Name:      terminal.Name,
 		Namespace: terminal.Namespace,
+		Labels:    recLabels,
 	}
 	selector = &metav1.LabelSelector{
-		MatchLabels: labelsMap,
+		MatchLabels: recLabels,
 	}
 	templateObjMeta = metav1.ObjectMeta{
-		Labels: labelsMap,
+		Labels: recLabels,
 	}
 	ports = []corev1.ContainerPort{
 		{
@@ -286,16 +283,13 @@ func (r *TerminalReconciler) syncDeployment(ctx context.Context, terminal *termi
 		},
 	}
 
-	expectDeployment := &appsv1.Deployment{
-		ObjectMeta: objectMeta,
-		Spec: appsv1.DeploymentSpec{
-			Replicas: terminal.Spec.Replicas,
-			Selector: selector,
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: templateObjMeta,
-				Spec: corev1.PodSpec{
-					Containers: containers,
-				},
+	expectDeploymentSpec := appsv1.DeploymentSpec{
+		Replicas: terminal.Spec.Replicas,
+		Selector: selector,
+		Template: corev1.PodTemplateSpec{
+			ObjectMeta: templateObjMeta,
+			Spec: corev1.PodSpec{
+				Containers: containers,
 			},
 		},
 	}
@@ -306,9 +300,9 @@ func (r *TerminalReconciler) syncDeployment(ctx context.Context, terminal *termi
 
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
 		// only update some specific fields
-		deployment.Spec.Replicas = expectDeployment.Spec.Replicas
-		deployment.Spec.Selector = expectDeployment.Spec.Selector
-		deployment.Spec.Template.ObjectMeta.Labels = expectDeployment.Spec.Template.Labels
+		deployment.Spec.Replicas = expectDeploymentSpec.Replicas
+		deployment.Spec.Selector = expectDeploymentSpec.Selector
+		deployment.Spec.Template.ObjectMeta.Labels = expectDeploymentSpec.Template.Labels
 		if len(deployment.Spec.Template.Spec.Containers) == 0 {
 			deployment.Spec.Template.Spec.Containers = containers
 		} else {
@@ -376,63 +370,19 @@ func isExpired(terminal *terminalv1.Terminal) bool {
 	return lastUpdateTime.Add(duration).Before(time.Now())
 }
 
-func buildLabelsMap(terminal *terminalv1.Terminal) map[string]string {
-	labelsMap := map[string]string{
-		"TerminalID": terminal.Name,
-	}
-	return labelsMap
-}
-
-func getDomain() string {
-	domain := os.Getenv("DOMAIN")
-	if domain == "" {
-		return DefaultDomain
-	}
-	return domain
-}
-
-func getPort() string {
-	port := os.Getenv("PORT")
-	if port == "" {
-		return DefaultPort
-	}
-	return port
-}
-
-func getSecretName() string {
-	secretName := os.Getenv("SECRET_NAME")
-	if secretName == "" {
-		return DefaultSecretName
-	}
-	return secretName
-}
-
-func getSecretNamespace() string {
-	secretNamespace := os.Getenv("SECRET_NAMESPACE")
-	if secretNamespace == "" {
-		return DefaultSecretNamespace
-	}
-	return secretNamespace
-}
-
 func (r *TerminalReconciler) getPort() string {
-	if r.terminalPort == "" || r.terminalPort == "80" || r.terminalPort == "443" {
+	if r.CtrConfig.Global.CloudPort == "" || r.CtrConfig.Global.CloudPort == "80" || r.CtrConfig.Global.CloudPort == "443" {
 		return ""
 	}
-	return ":" + r.terminalPort
+	return ":" + r.CtrConfig.Global.CloudPort
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *TerminalReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.recorder = mgr.GetEventRecorderFor("sealos-terminal-controller")
-	r.terminalDomain = getDomain()
-	r.terminalPort = getPort()
-	r.secretName = getSecretName()
-	r.secretNamespace = getSecretNamespace()
 	r.Config = mgr.GetConfig()
-	owner := &handler.EnqueueRequestForOwner{OwnerType: &terminalv1.Terminal{}, IsController: false}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&terminalv1.Terminal{}).
-		Watches(&source.Kind{Type: &appsv1.Deployment{}}, owner).
+		Owns(&appsv1.Deployment{}).Owns(&corev1.Service{}).Owns(&networkingv1.Ingress{}).
 		Complete(r)
 }

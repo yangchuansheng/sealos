@@ -2,41 +2,46 @@ import { getInitData } from '@/api/platform';
 import { Coin } from '@/constants/app';
 
 export let SEALOS_DOMAIN = 'cloud.sealos.io';
+export let SEALOS_USER_DOMAINS = [{ name: 'cloud.sealos.io', secretName: 'wildcard-cert' }];
+export let DESKTOP_DOMAIN = 'cloud.sealos.io';
 export let DOMAIN_PORT = '';
-export let INGRESS_SECRET = 'wildcard-cert';
 export let SHOW_EVENT_ANALYZE = false;
 export let CURRENCY = Coin.shellCoin;
+export let UPLOAD_LIMIT = 50;
+export let DOWNLOAD_LIMIT = 100;
 
 export const loadInitData = async () => {
   try {
     const res = await getInitData();
     SEALOS_DOMAIN = res.SEALOS_DOMAIN;
+    SEALOS_USER_DOMAINS = res.SEALOS_USER_DOMAINS;
     DOMAIN_PORT = res.DOMAIN_PORT;
-    INGRESS_SECRET = res.INGRESS_SECRET;
     SHOW_EVENT_ANALYZE = res.SHOW_EVENT_ANALYZE;
     CURRENCY = res.CURRENCY;
+    UPLOAD_LIMIT = res.fileMangerConfig.uploadLimit;
+    DOWNLOAD_LIMIT = res.fileMangerConfig.downloadLimit;
+    DESKTOP_DOMAIN = res.DESKTOP_DOMAIN;
 
     return {
       SEALOS_DOMAIN,
       DOMAIN_PORT,
-      INGRESS_SECRET,
       CURRENCY,
-      FORM_SLIDER_LIST_CONFIG: res.FORM_SLIDER_LIST_CONFIG
+      FORM_SLIDER_LIST_CONFIG: res.FORM_SLIDER_LIST_CONFIG,
+      DESKTOP_DOMAIN: res.DESKTOP_DOMAIN
     };
   } catch (error) {}
 
   return {
-    SEALOS_DOMAIN,
-    INGRESS_SECRET
+    SEALOS_DOMAIN
   };
 };
 
 // server side method
 export const serverLoadInitData = () => {
   try {
-    SEALOS_DOMAIN = process.env.SEALOS_DOMAIN || 'cloud.sealos.io';
-    DOMAIN_PORT = process.env.DOMAIN_PORT || '';
-    INGRESS_SECRET = process.env.INGRESS_SECRET || 'wildcard-cert';
-    SHOW_EVENT_ANALYZE = !!process.env.FASTGPT_KEY;
+    SEALOS_DOMAIN = global.AppConfig.cloud.domain || 'cloud.sealos.io';
+    DOMAIN_PORT = global.AppConfig.cloud.port || '';
+    SHOW_EVENT_ANALYZE = global.AppConfig.launchpad.eventAnalyze.enabled;
+    SEALOS_USER_DOMAINS = global.AppConfig.cloud.userDomains;
   } catch (error) {}
 };

@@ -1,10 +1,6 @@
-import { Authority, QueryKey, TBucket, bucketConfigQueryParam } from '@/consts';
+import { bucketConfigQueryParam } from '@/consts';
 import { Text, HStack, StackProps, ButtonGroup, Button } from '@chakra-ui/react';
-import AuthorityTips from '@/components/common/AuthorityTip';
-import DeleteIcon from '@/components/Icons/DeleteIcon';
 import { useOssStore } from '@/store/ossStore';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { deleteBucket } from '@/api/bucket';
 import { useRouter } from 'next/router';
 import { useTranslation } from 'next-i18next';
 import EditIcon from '../Icons/EditIcon';
@@ -21,9 +17,8 @@ export default function BucketHeader({ ...styles }: StackProps) {
         <Text fontSize={'24px'} fontWeight={'500'}>
           {bucket.name}
         </Text>
-        <AuthorityTips authority={Authority.private} />
       </HStack>
-      <ButtonGroup variant={'secondary'} spacing={'16px'}>
+      <ButtonGroup variant={'outline'} spacing={'16px'}>
         <Button
           gap="8px"
           px="24px"
@@ -38,7 +33,7 @@ export default function BucketHeader({ ...styles }: StackProps) {
             router.push('/bucketConfig?' + params.toString());
           }}
         >
-          <EditIcon boxSize={'16px'} color="grayModern.400" />
+          <EditIcon boxSize={'16px'} fill={'currentcolor'} />
           <Text>{t('edit')}</Text>
         </Button>
         <DeleteBucketModal bucketName={bucket.name} />
