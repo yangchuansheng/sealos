@@ -50,8 +50,7 @@ func (a *Adaptor) GetRequestURL(meta *meta.Meta) (string, error) {
 		requestURL := strings.Split(meta.RequestURLPath, "?")[0]
 		requestURL = fmt.Sprintf("%s?api-version=%s", requestURL, meta.Config.APIVersion)
 		task := strings.TrimPrefix(requestURL, "/v1/")
-		model := meta.ActualModelName
-		model = strings.Replace(model, ".", "", -1)
+		model := strings.ReplaceAll(meta.ActualModelName, ".", "")
 		// https://github.com/labring/sealos/service/aiproxy/issues/1191
 		// {your endpoint}/openai/deployments/{your azure_model}/chat/completions?api-version={api_version}
 		requestURL = fmt.Sprintf("/openai/deployments/%s/%s", model, task)
@@ -186,17 +185,19 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, meta *meta.Met
 			usage.PromptTokens = meta.PromptTokens
 			usage.CompletionTokens = usage.TotalTokens - meta.PromptTokens
 		}
-	} else {
-		switch meta.Mode {
-		case relaymode.ImagesGenerations:
-			err, _ = ImageHandler(c, resp)
-		case relaymode.AudioTranscription:
-			err, usage = STTHandler(c, resp, meta, a.responseFormat)
-		case relaymode.AudioSpeech:
-			err, usage = TTSHandler(c, resp, meta)
-		default:
-			err, usage = Handler(c, resp, meta.PromptTokens, meta.ActualModelName)
-		}
+		return
+	}
+	switch meta.Mode {
+	case relaymode.ImagesGenerations:
+		err, _ = ImageHandler(c, resp)
+	case relaymode.AudioTranscription:
+		err, usage = STTHandler(c, resp, meta, a.responseFormat)
+	case relaymode.AudioSpeech:
+		err, usage = TTSHandler(c, resp, meta)
+	case relaymode.Rerank:
+		err, usage = RerankHandler(c, resp, meta.PromptTokens, meta)
+	default:
+		err, usage = Handler(c, resp, meta.PromptTokens, meta.ActualModelName)
 	}
 	return
 }

@@ -10,13 +10,17 @@ import (
 )
 
 func SetAPIRouter(router *gin.Engine) {
-	apiRouter := router.Group("/api")
+	api := router.Group("/api")
 	if env.Bool("GZIP_ENABLED", false) {
-		apiRouter.Use(gzip.Gzip(gzip.DefaultCompression))
+		api.Use(gzip.Gzip(gzip.DefaultCompression))
 	}
+
+	healthRouter := api.Group("")
+	healthRouter.GET("/status", controller.GetStatus)
+
+	apiRouter := api.Group("")
 	apiRouter.Use(middleware.AdminAuth)
 	{
-		apiRouter.GET("/status", controller.GetStatus)
 		apiRouter.GET("/models", controller.BuiltinModels)
 		apiRouter.GET("/models/price", controller.ModelPrice)
 		apiRouter.GET("/models/enabled", controller.EnabledModels)
@@ -25,6 +29,10 @@ func SetAPIRouter(router *gin.Engine) {
 		apiRouter.GET("/models/enabled/channel/price", controller.EnabledType2ModelsAndPrice)
 		apiRouter.GET("/models/enabled/default", controller.ChannelDefaultModels)
 		apiRouter.GET("/models/enabled/default/:type", controller.ChannelDefaultModelsByType)
+		apiRouter.GET("/models/enabled/mapping/default", controller.ChannelDefaultModelMapping)
+		apiRouter.GET("/models/enabled/mapping/default/:type", controller.ChannelDefaultModelMappingByType)
+		apiRouter.GET("/models/enabled/all/default", controller.ChannelDefaultModelsAndMapping)
+		apiRouter.GET("/models/enabled/all/default/:type", controller.ChannelDefaultModelsAndMappingByType)
 
 		groupsRoute := apiRouter.Group("/groups")
 		{

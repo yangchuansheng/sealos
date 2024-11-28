@@ -25,6 +25,7 @@ const (
 	appType               = "LLM-TOKEN"
 	sealosRequester       = "sealos-admin"
 	sealosGroupBalanceKey = "sealos:balance:%s"
+	getBalanceRetry       = 3
 )
 
 var (
@@ -34,7 +35,7 @@ var (
 	minConsumeAmount                     = decimal.NewFromInt(1)
 	jwtToken                string
 	sealosRedisCacheEnable  = env.Bool("BALANCE_SEALOS_REDIS_CACHE_ENABLE", true)
-	sealosCacheExpire       = 15 * time.Second
+	sealosCacheExpire       = 3 * time.Minute
 )
 
 type Sealos struct {
@@ -101,6 +102,8 @@ func cacheSetGroupBalance(ctx context.Context, group string, balance int64, user
 	if !common.RedisEnabled || !sealosRedisCacheEnable {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	pipe := common.RDB.Pipeline()
 	pipe.HSet(ctx, fmt.Sprintf(sealosGroupBalanceKey, group), sealosCache{
 		Balance: balance,
@@ -116,6 +119,8 @@ func cacheGetGroupBalance(ctx context.Context, group string) (*sealosCache, erro
 	if !common.RedisEnabled || !sealosRedisCacheEnable {
 		return nil, redis.Nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	var cache sealosCache
 	if err := common.RDB.HGetAll(ctx, fmt.Sprintf(sealosGroupBalanceKey, group)).Scan(&cache); err != nil {
 		return nil, err
@@ -139,17 +144,29 @@ func cacheDecreaseGroupBalance(ctx context.Context, group string, amount int64) 
 	return decreaseGroupBalanceScript.Run(ctx, common.RDB, []string{fmt.Sprintf(sealosGroupBalanceKey, group)}, amount).Err()
 }
 
-// GroupBalance interface implementation
 func (s *Sealos) GetGroupRemainBalance(ctx context.Context, group string) (float64, PostGroupConsumer, error) {
+	var errs []error
+	for i := 0; ; i++ {
+		balance, consumer, err := s.getGroupRemainBalance(ctx, group)
+		if err == nil {
+			return balance, consumer, nil
+		}
+		errs = append(errs, err)
+		if i == getBalanceRetry-1 {
+			return 0, nil, errors.Join(errs...)
+		}
+		time.Sleep(time.Second)
+	}
+}
+
+// GroupBalance interface implementation
+func (s *Sealos) getGroupRemainBalance(ctx context.Context, group string) (float64, PostGroupConsumer, error) {
 	if cache, err := cacheGetGroupBalance(ctx, group); err == nil && cache.UserUID != "" {
 		return decimal.NewFromInt(cache.Balance).Div(decimalBalancePrecision).InexactFloat64(),
 			newSealosPostGroupConsumer(s.accountURL, group, cache.UserUID, cache.Balance), nil
 	} else if err != nil && !errors.Is(err, redis.Nil) {
-		logger.Errorf(ctx, "get group (%s) balance cache failed: %s", group, err)
+		logger.SysErrorf("get group (%s) balance cache failed: %s", group, err)
 	}
-
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
 
 	balance, userUID, err := s.fetchBalanceFromAPI(ctx, group)
 	if err != nil {
@@ -157,7 +174,7 @@ func (s *Sealos) GetGroupRemainBalance(ctx context.Context, group string) (float
 	}
 
 	if err := cacheSetGroupBalance(ctx, group, balance, userUID); err != nil {
-		logger.Errorf(ctx, "set group (%s) balance cache failed: %s", group, err)
+		logger.SysErrorf("set group (%s) balance cache failed: %s", group, err)
 	}
 
 	return decimal.NewFromInt(balance).Div(decimalBalancePrecision).InexactFloat64(),
@@ -165,6 +182,8 @@ func (s *Sealos) GetGroupRemainBalance(ctx context.Context, group string) (float
 }
 
 func (s *Sealos) fetchBalanceFromAPI(ctx context.Context, group string) (balance int64, userUID string, err error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		fmt.Sprintf("%s/admin/v1alpha1/account-with-workspace?namespace=%s", s.accountURL, group), nil)
 	if err != nil {
@@ -184,8 +203,7 @@ func (s *Sealos) fetchBalanceFromAPI(ctx context.Context, group string) (balance
 	}
 
 	if sealosResp.Error != "" {
-		logger.Errorf(ctx, "get group (%s) balance failed: %s", group, sealosResp.Error)
-		return 0, "", fmt.Errorf("get group (%s) balance failed", group)
+		return 0, "", errors.New(sealosResp.Error)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -219,7 +237,7 @@ func (s *SealosPostGroupConsumer) PostGroupConsume(ctx context.Context, tokenNam
 	amount := s.calculateAmount(usage)
 
 	if err := cacheDecreaseGroupBalance(ctx, s.group, amount.IntPart()); err != nil {
-		logger.Errorf(ctx, "decrease group (%s) balance cache failed: %s", s.group, err)
+		logger.SysErrorf("decrease group (%s) balance cache failed: %s", s.group, err)
 	}
 
 	if err := s.postConsume(ctx, amount.IntPart(), tokenName); err != nil {
@@ -260,19 +278,17 @@ func (s *SealosPostGroupConsumer) postConsume(ctx context.Context, amount int64,
 	req.Header.Set("Authorization", "Bearer "+jwtToken)
 	resp, err := sealosHTTPClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("post group (%s) consume failed: %w", s.group, err)
+		return err
 	}
 	defer resp.Body.Close()
 
 	var sealosResp sealosPostGroupConsumeResp
 	if err := json.NewDecoder(resp.Body).Decode(&sealosResp); err != nil {
-		return fmt.Errorf("post group (%s) consume failed: %w", s.group, err)
+		return err
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		logger.Errorf(ctx, "group (%s) consume failed with status code %d: %s",
-			s.group, resp.StatusCode, sealosResp.Error)
-		return fmt.Errorf("group (%s) consume failed with status code %d", s.group, resp.StatusCode)
+	if resp.StatusCode != http.StatusOK || sealosResp.Error != "" {
+		return fmt.Errorf("status code: %d, error: %s", resp.StatusCode, sealosResp.Error)
 	}
 
 	return nil
